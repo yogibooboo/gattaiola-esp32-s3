@@ -1,0 +1,31 @@
+
+#include <Arduino.h>
+
+#include <driver/ledc.h>
+
+
+
+#define PWM_PIN 13       // Pin di output PWM
+#define PWM_CHANNEL 0    // Canale PWM usato
+
+int32_t frequenza=100000;
+
+void setup() {
+  Serial.begin(115200); // Inizializza la comunicazione seriale a 115200 baud
+  // Configura il canale PWM con una risoluzione più bassa
+  ledcSetup(PWM_CHANNEL, frequenza, 4); // Frequenza 1 Hz, risoluzione 4 bit
+  ledcAttachPin(PWM_PIN, PWM_CHANNEL); // Associa il pin al canale PWM
+
+  // Imposta il duty cycle al 50% per avere un'onda quadra
+  ledcWrite(PWM_CHANNEL, 8); // 8 su 4 bit (massimo 15) = 50%
+  Serial.print("inizializzato ..");
+}
+
+void loop() {
+  // Il segnale a 1 Hz viene generato continuamente
+  delay(200);
+  frequenza+=2000; if (frequenza>150000) frequenza=10000;
+  ledcSetup(PWM_CHANNEL, frequenza, 4); // Frequenza 1 Hz, risoluzione 4 bit
+  Serial.print("frequenza: ");
+  Serial.println(frequenza);
+}
