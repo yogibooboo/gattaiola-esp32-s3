@@ -1,14 +1,15 @@
 #include <Arduino.h>
 #include <driver/ledc.h>
 #include <U8g2lib.h>
-#include <driver/i2s.h>
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
+#include <driver/adc.h>
+#include <esp_adc/adc_continuous.h>
 
 // Configurazione invariata
 const char *ssid = "VodafoneRibes";
 const char *password = "scheggia2000";
-#define PWM_PIN 13
+#define PWM_PIN 14
 #define PWM_CHANNEL 0
 int32_t frequenza = 134200;
 int statoconta = 0;
@@ -16,11 +17,11 @@ int statoacq = 0;
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
 U8G2_SSD1306_128X64_NONAME_F_SW_I2C u8g2(U8G2_R0, 15, 4, 16);
-#define pblack 12
-#define pred 14
-#define pyellow 27
-#define pblue 22
-#define ledverde 21
+#define pblack 5
+#define pred 6
+#define pyellow 7
+#define pblue 39
+#define ledverde 20
 
 #define BUFFER_SIZE 10000
 #define CIRCULAR_SIZE 256
@@ -38,11 +39,16 @@ uint16_t country_code = 0;
 uint64_t device_code = 0;
 bool crc_ok = false;
 
-#define ADC_CHANNEL ADC1_CHANNEL_3
+// Configurazione ADC per ESP32-S3
+#define ADC_CHANNEL ADC_CHANNEL_0  // Canale ADC1_0 (GPIO 1, per esempio)
 uint16_t first_adc = 0;
+
+// Handle per l'ADC continuo
+adc_continuous_handle_t adc_handle = NULL;
 
 void media_correlazione_32(uint16_t* segnale, int32_t* filt, int32_t* corr, int32_t* peaks, int32_t* dists, Bit* bits, uint8_t* bytes,
                           int32_t& n_peaks, int32_t& n_dists, int32_t& n_bits, uint16_t& country, uint64_t& device, bool& crc_valid) {
+    // Questa funzione rimane invariata
     const int N = BUFFER_SIZE;
     const int larghezza_finestra = 8;
     const int lunghezza_correlazione = 32;
@@ -51,7 +57,6 @@ void media_correlazione_32(uint16_t* segnale, int32_t* filt, int32_t* corr, int3
     int32_t ultima_distanza = 0, newbit = 0, numbit = 0;
     bool newpeak = false;
 
-    // digitalWrite(ledverde, HIGH); lo accendo solo con crc ok
     uint32_t start_time = millis();
 
     n_peaks = n_dists = n_bits = 0;
@@ -176,14 +181,14 @@ void media_correlazione_32(uint16_t* segnale, int32_t* filt, int32_t* corr, int3
                             Serial.print("CRC: ");
                             Serial.println(crc_valid ? "OK" : "KO");
                             if (crc_valid) {
-                                digitalWrite(ledverde, HIGH);   // segnalo col led l'avvenuto riconoscimento
+                                digitalWrite(ledverde, HIGH);
                                 country = (bytes[5] << 2) | (bytes[4] >> 6);
                                 device = ((uint64_t)(bytes[4] & 0x3F) << 32) | ((uint64_t)bytes[3] << 24) |
                                          ((uint64_t)bytes[2] << 16) | (bytes[1] << 8) | bytes[0];
                                 Serial.print("Country Code: ");
                                 Serial.println(country);
                                 Serial.print("Device Code: ");
-                                Serial.println((uint64_t)device);  // Cast per evitare problemi di formato
+                                Serial.println((uint64_t)device);
                             }
                         }
                     } else {
@@ -198,7 +203,6 @@ void media_correlazione_32(uint16_t* segnale, int32_t* filt, int32_t* corr, int3
         }
     }
 
-    //  digitalWrite(ledverde, LOW);  lo spengo più tardi
     uint32_t end_time = millis();
     Serial.print("Durata analisi: ");
     Serial.print(end_time - start_time);
@@ -222,7 +226,7 @@ void u8g2_prova() {
     if (crc_ok) {
         sprintf(buffer, "CC: %u", country_code);
         u8g2.drawStr(0, 20, buffer);
-        sprintf(buffer, "%llu", device_code);  // Solo il device_code, senza "DC: "
+        sprintf(buffer, "%llu", device_code);
         u8g2.drawStr(0, 40, buffer);
     } else {
         u8g2.drawStr(0, 20, "KO");
@@ -245,12 +249,17 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
         if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
             data[len] = 0;
             if (strcmp((char*)data, "get_buffer") == 0) {
-                i2s_start(I2S_NUM_0);
+                ESP_ERROR_CHECK(adc_continuous_start(adc_handle));
+                uint8_t result[BUFFER_SIZE * 2];
                 size_t bytes_read;
-                i2s_read(I2S_NUM_0, adc_buffer, BUFFER_SIZE * 2, &bytes_read, 80 / portTICK_PERIOD_MS);
-                i2s_stop(I2S_NUM_0);
+                ESP_ERROR_CHECK(adc_continuous_read(adc_handle, result, BUFFER_SIZE * 2, &bytes_read, 80 / portTICK_PERIOD_MS));
+                ESP_ERROR_CHECK(adc_continuous_stop(adc_handle));
                 if (bytes_read == BUFFER_SIZE * 2) {
-                    first_adc = adc_buffer[0] >> 4;
+                    adc_digi_output_data_t *p = (adc_digi_output_data_t*)result;
+                    for (int i = 0; i < BUFFER_SIZE; i++) {
+                        adc_buffer[i] = p[i].type1.data;  // Estrai i dati grezzi
+                    }
+                    first_adc = adc_buffer[0];
                     client->binary((uint8_t*)adc_buffer, BUFFER_SIZE * 2);
                     Serial.println("Buffer inviato al client");
 
@@ -276,7 +285,6 @@ void setup(void) {
         Serial.print(".");
     }
     Serial.println("\nConnesso al Wi-Fi");
-    Serial.println(WiFi.localIP());
 
     ws.onEvent(onWebSocketEvent);
     server.addHandler(&ws);
@@ -289,23 +297,26 @@ void setup(void) {
     u8g2.clearBuffer();
     u8g2.sendBuffer();
 
-    i2s_config_t i2s_config = {
-        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_ADC_BUILT_IN),
-        .sample_rate = 134200,
-        .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
-        .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
-        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
-        .intr_alloc_flags = 0,
-        .dma_buf_count = 8,
-        .dma_buf_len = 64,
-        .use_apll = false,
-        .tx_desc_auto_clear = false,
-        .fixed_mclk = 0
+    // Configurazione ADC continuo per ESP32-S3
+    adc_continuous_handle_cfg_t adc_config = {
+        .max_store_buf_size = BUFFER_SIZE * 2,
+        .conv_frame_size = BUFFER_SIZE * 2,
     };
+    ESP_ERROR_CHECK(adc_continuous_new_handle(&adc_config, &adc_handle));
 
-    i2s_driver_install(I2S_NUM_0, &i2s_config, 0, NULL);
-    i2s_set_adc_mode(ADC_UNIT_1, ADC_CHANNEL);
-    i2s_adc_enable(I2S_NUM_0);
+    adc_continuous_config_t dig_cfg = {
+        .pattern_num = 1,
+        .pattern = (adc_digi_pattern_config_t[]){{
+            .atten = ADC_ATTEN_DB_12,    // Attenuazione 12 dB
+            .channel = ADC_CHANNEL,      // Canale ADC specificato
+            .unit = ADC_UNIT_1,          // ADC1
+            .bit_width = SOC_ADC_DIGI_MAX_BITWIDTH,  // Massima risoluzione
+        }},
+        .sample_freq_hz = 134200,        // Frequenza di campionamento
+        .conv_mode = ADC_CONV_SINGLE_UNIT_1,  // Solo ADC1
+        .format = ADC_DIGI_OUTPUT_FORMAT_TYPE1,  // Formato TYPE1
+    };
+    ESP_ERROR_CHECK(adc_continuous_config(adc_handle, &dig_cfg));
 }
 
 void loop(void) {
@@ -326,14 +337,19 @@ void loop(void) {
     if ((sblack == 0) && (sred == 0)) frequenza = 134200;
 
     if (statoacq == 1) {
-        i2s_start(I2S_NUM_0);
+        ESP_ERROR_CHECK(adc_continuous_start(adc_handle));
+        uint8_t result[BUFFER_SIZE * 2];
         size_t bytes_read;
-        i2s_read(I2S_NUM_0, adc_buffer, BUFFER_SIZE * 2, &bytes_read, 80 / portTICK_PERIOD_MS);
-        i2s_stop(I2S_NUM_0);
+        ESP_ERROR_CHECK(adc_continuous_read(adc_handle, result, BUFFER_SIZE * 2, &bytes_read, 80 / portTICK_PERIOD_MS));
+        ESP_ERROR_CHECK(adc_continuous_stop(adc_handle));
         Serial.print("ADC Value: ");
-        Serial.println(adc_buffer[0]);
+        Serial.println(((adc_digi_output_data_t*)result)[0].type1.data);
         if (bytes_read == BUFFER_SIZE * 2) {
-            first_adc = adc_buffer[0] >> 4;
+            adc_digi_output_data_t *p = (adc_digi_output_data_t*)result;
+            for (int i = 0; i < BUFFER_SIZE; i++) {
+                adc_buffer[i] = p[i].type1.data;  // Estrai i dati grezzi
+            }
+            first_adc = adc_buffer[0];
             media_correlazione_32(adc_buffer, segnale_filtrato32, correlazione32, picchi32, distanze32, bits32, bytes32,
                                  num_picchi, num_distanze, num_bits, country_code, device_code, crc_ok);
         }
@@ -346,5 +362,4 @@ void loop(void) {
     u8g2.sendBuffer();
 
     delay(1);
-   
 }
