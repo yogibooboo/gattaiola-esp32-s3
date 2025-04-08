@@ -257,7 +257,7 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
                 if (bytes_read == BUFFER_SIZE * 2) {
                     adc_digi_output_data_t *p = (adc_digi_output_data_t*)result;
                     for (int i = 0; i < BUFFER_SIZE; i++) {
-                        adc_buffer[i] = p[i].type1.data;  // Estrai i dati grezzi
+                        adc_buffer[i] = p[i].data;       // Estrai i dati grezzi (API v5.x)
                     }
                     first_adc = adc_buffer[0];
                     client->binary((uint8_t*)adc_buffer, BUFFER_SIZE * 2);
@@ -306,7 +306,7 @@ void setup(void) {
 
     adc_continuous_config_t dig_cfg = {
         .pattern_num = 1,
-        .pattern = (adc_digi_pattern_config_t[]){{
+        .adc_pattern = (adc_digi_pattern_config_t[]){{
             .atten = ADC_ATTEN_DB_12,    // Attenuazione 12 dB
             .channel = ADC_CHANNEL,      // Canale ADC specificato
             .unit = ADC_UNIT_1,          // ADC1
@@ -343,11 +343,11 @@ void loop(void) {
         ESP_ERROR_CHECK(adc_continuous_read(adc_handle, result, BUFFER_SIZE * 2, &bytes_read, 80 / portTICK_PERIOD_MS));
         ESP_ERROR_CHECK(adc_continuous_stop(adc_handle));
         Serial.print("ADC Value: ");
-        Serial.println(((adc_digi_output_data_t*)result)[0].type1.data);
+        Serial.println(((adc_digi_output_data_t*)result)[0].data); // API v5.x
         if (bytes_read == BUFFER_SIZE * 2) {
             adc_digi_output_data_t *p = (adc_digi_output_data_t*)result;
             for (int i = 0; i < BUFFER_SIZE; i++) {
-                adc_buffer[i] = p[i].type1.data;  // Estrai i dati grezzi
+                adc_buffer[i] = p[i].data;       // Estrai i dati grezzi (API v5.x)
             }
             first_adc = adc_buffer[0];
             media_correlazione_32(adc_buffer, segnale_filtrato32, correlazione32, picchi32, distanze32, bits32, bytes32,
