@@ -1,27 +1,25 @@
 #include <Arduino.h>
 #include <driver/ledc.h>
-#include <U8g2lib.h>
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
-#include <driver/adc.h>
-#include <esp_adc/adc_continuous.h>
+#include <driver/adc.h>  // Necessario per le funzioni ADC su ESP32-S3
+
+// --- Configurazione del timer per interrupt ---
+hw_timer_t *timer = NULL;  // Puntatore al timer hardware
+volatile bool buffer_ready = false;  // Flag per indicare che il buffer è pieno
+volatile size_t buffer_index = 0;  // Indice per il buffer
 
 // Configurazione invariata
 const char *ssid = "VodafoneRibes";
 const char *password = "scheggia2000";
-#define PWM_PIN 14
+#define PWM_PIN 14  // PWM su GPIO14
 #define PWM_CHANNEL 0
-int32_t frequenza = 134200;
-int statoconta = 0;
+int32_t frequenza = 134200;  // Frequenza fissa a 134,2 kHz
 int statoacq = 0;
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
-U8G2_SSD1306_128X64_NONAME_F_SW_I2C u8g2(U8G2_R0, 15, 4, 16);
-#define pblack 5
-#define pred 6
-#define pyellow 7
-#define pblue 39
-#define ledverde 20
+#define pblue 39  // Pulsante su GPIO39
+#define ledverde 21
 
 #define BUFFER_SIZE 10000
 #define CIRCULAR_SIZE 256
@@ -39,16 +37,22 @@ uint16_t country_code = 0;
 uint64_t device_code = 0;
 bool crc_ok = false;
 
-// Configurazione ADC per ESP32-S3
-#define ADC_CHANNEL ADC_CHANNEL_0  // Canale ADC1_0 (GPIO 1, per esempio)
+#define ADC_CHANNEL ADC1_CHANNEL_0  // Canale ADC1 su GPIO1 (ADC1/CH0)
 uint16_t first_adc = 0;
 
-// Handle per l'ADC continuo
-adc_continuous_handle_t adc_handle = NULL;
+// --- ISR per l'acquisizione ADC ---
+void IRAM_ATTR onTimer() {
+    if (buffer_index < BUFFER_SIZE) {
+        adc_buffer[buffer_index] = adc1_get_raw(ADC1_CHANNEL_0);  // Legge il canale ADC1 su GPIO1
+        buffer_index++;
+    }
+    if (buffer_index >= BUFFER_SIZE) {
+        buffer_ready = true;  // Buffer pieno, pronto per l'analisi
+    }
+}
 
 void media_correlazione_32(uint16_t* segnale, int32_t* filt, int32_t* corr, int32_t* peaks, int32_t* dists, Bit* bits, uint8_t* bytes,
                           int32_t& n_peaks, int32_t& n_dists, int32_t& n_bits, uint16_t& country, uint64_t& device, bool& crc_valid) {
-    // Questa funzione rimane invariata
     const int N = BUFFER_SIZE;
     const int larghezza_finestra = 8;
     const int lunghezza_correlazione = 32;
@@ -209,36 +213,6 @@ void media_correlazione_32(uint16_t* segnale, int32_t* filt, int32_t* corr, int3
     Serial.println(" ms");
 }
 
-void u8g2_prepare(void) {
-    u8g2.setFont(u8g2_font_10x20_tf);
-    u8g2.setFontRefHeightExtendedText();
-    u8g2.setDrawColor(1);
-    u8g2.setFontPosTop();
-    u8g2.setFontDirection(0);
-}
-
-void u8g2_prova() {
-    char buffer[20];
-    itoa(frequenza, buffer, 10);
-    u8g2.drawStr(0, 0, "Freq:");
-    u8g2.drawStr(50, 0, buffer);
-
-    if (crc_ok) {
-        sprintf(buffer, "CC: %u", country_code);
-        u8g2.drawStr(0, 20, buffer);
-        sprintf(buffer, "%llu", device_code);
-        u8g2.drawStr(0, 40, buffer);
-    } else {
-        u8g2.drawStr(0, 20, "KO");
-        u8g2.drawStr(0, 40, "***");
-    }
-}
-
-void draw(void) {
-    u8g2_prepare();
-    u8g2_prova();
-}
-
 void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
     if (type == WS_EVT_CONNECT) {
         Serial.println("Client WebSocket connesso");
@@ -249,17 +223,16 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
         if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
             data[len] = 0;
             if (strcmp((char*)data, "get_buffer") == 0) {
-                ESP_ERROR_CHECK(adc_continuous_start(adc_handle));
-                uint8_t result[BUFFER_SIZE * 2];
-                size_t bytes_read;
-                ESP_ERROR_CHECK(adc_continuous_read(adc_handle, result, BUFFER_SIZE * 2, &bytes_read, 80 / portTICK_PERIOD_MS));
-                ESP_ERROR_CHECK(adc_continuous_stop(adc_handle));
-                if (bytes_read == BUFFER_SIZE * 2) {
-                    adc_digi_output_data_t *p = (adc_digi_output_data_t*)result;
-                    for (int i = 0; i < BUFFER_SIZE; i++) {
-                        adc_buffer[i] = p[i].data;       // Estrai i dati grezzi (API v5.x)
-                    }
-                    first_adc = adc_buffer[0];
+                buffer_index = 0;
+                buffer_ready = false;
+                timerStart(timer);
+                while (!buffer_ready) {
+                    delay(1);
+                }
+                timerStop(timer);
+
+                if (buffer_index >= BUFFER_SIZE) {
+                    first_adc = adc_buffer[0] >> 4;
                     client->binary((uint8_t*)adc_buffer, BUFFER_SIZE * 2);
                     Serial.println("Buffer inviato al client");
 
@@ -272,10 +245,7 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
 }
 
 void setup(void) {
-    pinMode(pblack, INPUT_PULLUP);
-    pinMode(pred, INPUT_PULLUP);
-    pinMode(pyellow, INPUT_PULLUP);
-    pinMode(pblue, INPUT_PULLUP);
+    pinMode(pblue, INPUT_PULLUP);  // Pulsante su GPIO39
     pinMode(ledverde, OUTPUT);
     Serial.begin(115200);
 
@@ -285,81 +255,48 @@ void setup(void) {
         Serial.print(".");
     }
     Serial.println("\nConnesso al Wi-Fi");
+    Serial.println(WiFi.localIP());
 
     ws.onEvent(onWebSocketEvent);
     server.addHandler(&ws);
     server.begin();
 
     ledcSetup(PWM_CHANNEL, frequenza, 4);
-    ledcAttachPin(PWM_PIN, PWM_CHANNEL);
+    ledcAttachPin(PWM_PIN, PWM_CHANNEL);  // PWM su GPIO14
     ledcWrite(PWM_CHANNEL, 8);
-    u8g2.begin();
-    u8g2.clearBuffer();
-    u8g2.sendBuffer();
 
-    // Configurazione ADC continuo per ESP32-S3
-    adc_continuous_handle_cfg_t adc_config = {
-        .max_store_buf_size = BUFFER_SIZE * 2,
-        .conv_frame_size = BUFFER_SIZE * 2,
-    };
-    ESP_ERROR_CHECK(adc_continuous_new_handle(&adc_config, &adc_handle));
+    // --- Configurazione ADC e Timer ---
+    adc1_config_width(ADC_WIDTH_12Bit);  // Risoluzione a 12 bit
+    adc1_config_channel_atten(ADC_CHANNEL, ADC_ATTEN_11db);  // Attenuazione per GPIO1 (ADC1/CH0)
 
-    adc_continuous_config_t dig_cfg = {
-        .pattern_num = 1,
-        .adc_pattern = (adc_digi_pattern_config_t[]){{
-            .atten = ADC_ATTEN_DB_12,    // Attenuazione 12 dB
-            .channel = ADC_CHANNEL,      // Canale ADC specificato
-            .unit = ADC_UNIT_1,          // ADC1
-            .bit_width = SOC_ADC_DIGI_MAX_BITWIDTH,  // Massima risoluzione
-        }},
-        .sample_freq_hz = 134200,        // Frequenza di campionamento
-        .conv_mode = ADC_CONV_SINGLE_UNIT_1,  // Solo ADC1
-        .format = ADC_DIGI_OUTPUT_FORMAT_TYPE1,  // Formato TYPE1
-    };
-    ESP_ERROR_CHECK(adc_continuous_config(adc_handle, &dig_cfg));
+    timer = timerBegin(1, 80, true);  // Usa timer 1 per evitare conflitti con LEDC
+    timerAttachInterrupt(timer, &onTimer, true);
+    timerAlarmWrite(timer, 1000000 / 134200, true);  // Interrupt a 134,2 kHz (~7,46 µs)
+    timerAlarmEnable(timer);  // Abilita il timer, ma non lo avvia ancora
 }
 
 void loop(void) {
-    int sblack = digitalRead(pblack);
-    int sred = digitalRead(pred);
-    int syel = digitalRead(pyellow);
     int sblue = digitalRead(pblue);
 
-    if (syel == 0) statoconta ^= 1;
-    if (sblue == 0) statoacq ^= 1;
-
-    if (statoconta == 1) {
-        frequenza += 1000;
-        if (frequenza > 150000) frequenza -= 49000;
-    }
-    if (sblack == 0) frequenza += 200;
-    if (sred == 0) frequenza -= 200;
-    if ((sblack == 0) && (sred == 0)) frequenza = 134200;
+    if (sblue == 0) statoacq ^= 1;  // Attiva/disattiva l'acquisizione con il pulsante
 
     if (statoacq == 1) {
-        ESP_ERROR_CHECK(adc_continuous_start(adc_handle));
-        uint8_t result[BUFFER_SIZE * 2];
-        size_t bytes_read;
-        ESP_ERROR_CHECK(adc_continuous_read(adc_handle, result, BUFFER_SIZE * 2, &bytes_read, 80 / portTICK_PERIOD_MS));
-        ESP_ERROR_CHECK(adc_continuous_stop(adc_handle));
-        Serial.print("ADC Value: ");
-        Serial.println(((adc_digi_output_data_t*)result)[0].data); // API v5.x
-        if (bytes_read == BUFFER_SIZE * 2) {
-            adc_digi_output_data_t *p = (adc_digi_output_data_t*)result;
-            for (int i = 0; i < BUFFER_SIZE; i++) {
-                adc_buffer[i] = p[i].data;       // Estrai i dati grezzi (API v5.x)
-            }
-            first_adc = adc_buffer[0];
-            media_correlazione_32(adc_buffer, segnale_filtrato32, correlazione32, picchi32, distanze32, bits32, bytes32,
-                                 num_picchi, num_distanze, num_bits, country_code, device_code, crc_ok);
+        buffer_index = 0;  // Resetta l'indice del buffer
+        buffer_ready = false;  // Resetta il flag
+        timerStart(timer);  // Avvia il timer per l'acquisizione
+        while (!buffer_ready) {
+            delay(1);  // Attende che il buffer sia pieno
         }
-        //statoacq = 0;  // Resetta dopo acquisizione e analisi
+        timerStop(timer);  // Ferma il timer dopo l'acquisizione
+
+        Serial.print("ADC Value: ");
+        Serial.println(adc_buffer[0]);
+        first_adc = adc_buffer[0] >> 4;
+        media_correlazione_32(adc_buffer, segnale_filtrato32, correlazione32, picchi32, distanze32, bits32, bytes32,
+                             num_picchi, num_distanze, num_bits, country_code, device_code, crc_ok);
+        statoacq = 0;  // Resetta dopo acquisizione e analisi
     }
 
     digitalWrite(ledverde, LOW);
-    u8g2.clearBuffer();
-    draw();
-    u8g2.sendBuffer();
-
     delay(1);
 }
