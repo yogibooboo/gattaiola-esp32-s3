@@ -2,23 +2,22 @@
 #include <driver/ledc.h>
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
-#include <driver/adc.h>  // Necessario per le funzioni ADC su ESP32-S3
+#include <driver/adc.h>
 
-// --- Configurazione del timer per interrupt ---
-hw_timer_t *timer = NULL;  // Puntatore al timer hardware
-volatile bool buffer_ready = false;  // Flag per indicare che il buffer è pieno
-volatile size_t buffer_index = 0;  // Indice per il buffer
+hw_timer_t *timer = NULL;
+volatile bool buffer_ready = false;
+volatile size_t buffer_index = 0;
 
-// Configurazione invariata
 const char *ssid = "VodafoneRibes";
 const char *password = "scheggia2000";
-#define PWM_PIN 14  // PWM su GPIO14
-#define PWM_CHANNEL 0
-int32_t frequenza = 134200;  // Frequenza fissa a 134,2 kHz
+#define PWM_PIN 14        // PWM su GPIO14
+#define PWM_CHANNEL 0     // Canale LEDC 0
+#define PWM_FREQ 134200   // Frequenza a 134,2 kHz
+#define PWM_RESOLUTION 4  // Risoluzione a 4 bit
 int statoacq = 0;
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
-#define pblue 39  // Pulsante su GPIO39
+#define pblue 39          // Pulsante su GPIO39
 #define ledverde 21
 
 #define BUFFER_SIZE 10000
@@ -40,14 +39,13 @@ bool crc_ok = false;
 #define ADC_CHANNEL ADC1_CHANNEL_0  // Canale ADC1 su GPIO1 (ADC1/CH0)
 uint16_t first_adc = 0;
 
-// --- ISR per l'acquisizione ADC ---
 void IRAM_ATTR onTimer() {
     if (buffer_index < BUFFER_SIZE) {
         adc_buffer[buffer_index] = adc1_get_raw(ADC1_CHANNEL_0);  // Legge il canale ADC1 su GPIO1
         buffer_index++;
     }
     if (buffer_index >= BUFFER_SIZE) {
-        buffer_ready = true;  // Buffer pieno, pronto per l'analisi
+        buffer_ready = true;
     }
 }
 
@@ -146,8 +144,8 @@ void media_correlazione_32(uint16_t* segnale, int32_t* filt, int32_t* corr, int3
                         stato_decobytes = 1;
                         contatore_bytes = contatore_bits = 0;
                         for (int j = 0; j < 10; j++) bytes[j] = 0;
-                        Serial.print("Sequenza sync at: ");
-                        Serial.println(i);
+                        Serial.print(" Sequenza sync at: ");
+                        Serial.print(i);
                     } else contatore_zeri = 0;
                     break;
 
@@ -196,8 +194,8 @@ void media_correlazione_32(uint16_t* segnale, int32_t* filt, int32_t* corr, int3
                             }
                         }
                     } else {
-                        Serial.print("Perso sync at: ");
-                        Serial.println(i);
+                        Serial.print(" Perso sync at: ");
+                        Serial.print(i);
                         contatore_zeri = contatore_bits = contatore_bytes = 0;
                         stato_decobytes = 0;
                     }
@@ -208,9 +206,9 @@ void media_correlazione_32(uint16_t* segnale, int32_t* filt, int32_t* corr, int3
     }
 
     uint32_t end_time = millis();
-    Serial.print("Durata analisi: ");
+    Serial.print("\n Durata analisi: ");
     Serial.print(end_time - start_time);
-    Serial.println(" ms");
+    Serial.print(" ms");
 }
 
 void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
@@ -244,8 +242,8 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
     }
 }
 
-void setup(void) {
-    pinMode(pblue, INPUT_PULLUP);  // Pulsante su GPIO39
+void setup() {
+    pinMode(pblue, INPUT_PULLUP);
     pinMode(ledverde, OUTPUT);
     Serial.begin(115200);
 
@@ -261,40 +259,40 @@ void setup(void) {
     server.addHandler(&ws);
     server.begin();
 
-    ledcSetup(PWM_CHANNEL, frequenza, 4);
-    ledcAttachPin(PWM_PIN, PWM_CHANNEL);  // PWM su GPIO14
-    ledcWrite(PWM_CHANNEL, 8);
+    ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);  // Configurazione PWM con vecchi parametri
+    ledcAttachPin(PWM_PIN, PWM_CHANNEL);
+    ledcWrite(PWM_CHANNEL, 8);  // Duty cycle 50% (8/15)
 
-    // --- Configurazione ADC e Timer ---
-    adc1_config_width(ADC_WIDTH_12Bit);  // Risoluzione a 12 bit
-    adc1_config_channel_atten(ADC_CHANNEL, ADC_ATTEN_11db);  // Attenuazione per GPIO1 (ADC1/CH0)
+    adc1_config_width(ADC_WIDTH_12Bit);
+    adc1_config_channel_atten(ADC_CHANNEL, ADC_ATTEN_11db);
 
-    timer = timerBegin(1, 80, true);  // Usa timer 1 per evitare conflitti con LEDC
+    timer = timerBegin(1, 80, true);
     timerAttachInterrupt(timer, &onTimer, true);
-    timerAlarmWrite(timer, 1000000 / 134200, true);  // Interrupt a 134,2 kHz (~7,46 µs)
-    timerAlarmEnable(timer);  // Abilita il timer, ma non lo avvia ancora
+    timerAlarmWrite(timer, 1000000 / 134200, true);
+    timerAlarmEnable(timer);
 }
 
-void loop(void) {
+void loop() {
     int sblue = digitalRead(pblue);
 
-    if (sblue == 0) statoacq ^= 1;  // Attiva/disattiva l'acquisizione con il pulsante
+    if (sblue == 0) statoacq ^= 1;
 
     if (statoacq == 1) {
-        buffer_index = 0;  // Resetta l'indice del buffer
-        buffer_ready = false;  // Resetta il flag
-        timerStart(timer);  // Avvia il timer per l'acquisizione
+        buffer_index = 0;
+        buffer_ready = false;
+        timerStart(timer);
         while (!buffer_ready) {
-            delay(1);  // Attende che il buffer sia pieno
+            delay(1);
         }
-        timerStop(timer);  // Ferma il timer dopo l'acquisizione
+        timerStop(timer);
 
-        Serial.print("ADC Value: ");
-        Serial.println(adc_buffer[0]);
+        Serial.print(" ADC Value: ");
+        Serial.print(adc_buffer[100]);
+        Serial.print(" ");
         first_adc = adc_buffer[0] >> 4;
         media_correlazione_32(adc_buffer, segnale_filtrato32, correlazione32, picchi32, distanze32, bits32, bytes32,
                              num_picchi, num_distanze, num_bits, country_code, device_code, crc_ok);
-        statoacq = 0;  // Resetta dopo acquisizione e analisi
+        statoacq = 0;
     }
 
     digitalWrite(ledverde, LOW);
