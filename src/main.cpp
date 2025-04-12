@@ -10,14 +10,14 @@ volatile size_t buffer_index = 0;
 
 const char *ssid = "VodafoneRibes";
 const char *password = "scheggia2000";
-#define PWM_PIN 14        // PWM su GPIO14
-#define PWM_CHANNEL 0     // Canale LEDC 0
-#define PWM_FREQ 134200   // Frequenza a 134,2 kHz
-#define PWM_RESOLUTION 4  // Risoluzione a 4 bit
-int statoacq = 0;
+#define PWM_PIN 14
+#define PWM_CHANNEL 0
+#define PWM_FREQ 134200
+#define PWM_RESOLUTION 4
+int statoacq = 0;  // Per il pulsante
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
-#define pblue 39          // Pulsante su GPIO39
+#define pblue 39
 #define ledverde 21
 
 #define BUFFER_SIZE 10000
@@ -36,12 +36,12 @@ uint16_t country_code = 0;
 uint64_t device_code = 0;
 bool crc_ok = false;
 
-#define ADC_CHANNEL ADC1_CHANNEL_0  // Canale ADC1 su GPIO1 (ADC1/CH0)
+#define ADC_CHANNEL ADC1_CHANNEL_0
 uint16_t first_adc = 0;
 
 void IRAM_ATTR onTimer() {
     if (buffer_index < BUFFER_SIZE) {
-        adc_buffer[buffer_index] = adc1_get_raw(ADC1_CHANNEL_0);  // Legge il canale ADC1 su GPIO1
+        adc_buffer[buffer_index] = adc1_get_raw(ADC1_CHANNEL_0);
         buffer_index++;
     }
     if (buffer_index >= BUFFER_SIZE) {
@@ -144,8 +144,8 @@ void media_correlazione_32(uint16_t* segnale, int32_t* filt, int32_t* corr, int3
                         stato_decobytes = 1;
                         contatore_bytes = contatore_bits = 0;
                         for (int j = 0; j < 10; j++) bytes[j] = 0;
-                        Serial.print(" Sequenza sync at: ");
-                        Serial.print(i);
+                        Serial.print("Sequenza sync at: ");
+                        Serial.println(i);
                     } else contatore_zeri = 0;
                     break;
 
@@ -194,8 +194,8 @@ void media_correlazione_32(uint16_t* segnale, int32_t* filt, int32_t* corr, int3
                             }
                         }
                     } else {
-                        Serial.print(" Perso sync at: ");
-                        Serial.print(i);
+                        Serial.print("Perso sync at: ");
+                        Serial.println(i);
                         contatore_zeri = contatore_bits = contatore_bytes = 0;
                         stato_decobytes = 0;
                     }
@@ -206,9 +206,9 @@ void media_correlazione_32(uint16_t* segnale, int32_t* filt, int32_t* corr, int3
     }
 
     uint32_t end_time = millis();
-    Serial.print("\n Durata analisi: ");
+    Serial.print("Durata analisi: ");
     Serial.print(end_time - start_time);
-    Serial.print(" ms");
+    Serial.println(" ms");
 }
 
 void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
@@ -220,7 +220,9 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
         AwsFrameInfo *info = (AwsFrameInfo*)arg;
         if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
             data[len] = 0;
+            Serial.printf("Ricevuto dal client: %s\n", (char*)data);
             if (strcmp((char*)data, "get_buffer") == 0) {
+                Serial.println("Inizio acquisizione da WebSocket...");
                 buffer_index = 0;
                 buffer_ready = false;
                 timerStart(timer);
@@ -230,12 +232,16 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
                 timerStop(timer);
 
                 if (buffer_index >= BUFFER_SIZE) {
+                    Serial.println("Invio buffer al client...");
+                    client->binary((uint8_t*)adc_buffer, BUFFER_SIZE * sizeof(uint16_t));
+                    Serial.println("Buffer inviato al client (binario)");
+                    // Opzionale: analisi
                     first_adc = adc_buffer[0] >> 4;
-                    client->binary((uint8_t*)adc_buffer, BUFFER_SIZE * 2);
-                    Serial.println("Buffer inviato al client");
-
                     media_correlazione_32(adc_buffer, segnale_filtrato32, correlazione32, picchi32, distanze32, bits32, bytes32,
                                          num_picchi, num_distanze, num_bits, country_code, device_code, crc_ok);
+                } else {
+                    Serial.println("Errore: buffer non pieno");
+                    client->text("Errore: buffer non pieno");
                 }
             }
         }
@@ -243,25 +249,37 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
 }
 
 void setup() {
+    Serial.begin(115200);
+    delay(1000);
+    Serial.println("Avvio ESP32-S3");
+
     pinMode(pblue, INPUT_PULLUP);
     pinMode(ledverde, OUTPUT);
-    Serial.begin(115200);
 
     WiFi.begin(ssid, password);
-    while (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Connessione al Wi-Fi in corso...");
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
         delay(500);
         Serial.print(".");
+        attempts++;
     }
-    Serial.println("\nConnesso al Wi-Fi");
-    Serial.println(WiFi.localIP());
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("\nConnesso al Wi-Fi");
+        Serial.println(WiFi.localIP());
+    } else {
+        Serial.println("\nErrore: impossibile connettersi al Wi-Fi");
+        return;
+    }
 
     ws.onEvent(onWebSocketEvent);
     server.addHandler(&ws);
     server.begin();
+    Serial.println("Server WebSocket avviato");
 
-    ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);  // Configurazione PWM con vecchi parametri
+    ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
     ledcAttachPin(PWM_PIN, PWM_CHANNEL);
-    ledcWrite(PWM_CHANNEL, 8);  // Duty cycle 50% (8/15)
+    ledcWrite(PWM_CHANNEL, 8);
 
     adc1_config_width(ADC_WIDTH_12Bit);
     adc1_config_channel_atten(ADC_CHANNEL, ADC_ATTEN_11db);
@@ -273,11 +291,17 @@ void setup() {
 }
 
 void loop() {
-    int sblue = digitalRead(pblue);
+    ws.cleanupClients();
 
-    if (sblue == 0) statoacq ^= 1;
+    // Acquisizione tramite pulsante
+    int sblue = digitalRead(pblue);
+    if (sblue == 0) {
+        Serial.println("Pulsante premuto");
+        statoacq ^= 1;
+    }
 
     if (statoacq == 1) {
+        Serial.println("Inizio acquisizione da pulsante...");
         buffer_index = 0;
         buffer_ready = false;
         timerStart(timer);
@@ -286,13 +310,13 @@ void loop() {
         }
         timerStop(timer);
 
-        Serial.print(" ADC Value: ");
-        Serial.print(adc_buffer[100]);
-        Serial.print(" ");
-        first_adc = adc_buffer[0] >> 4;
+        Serial.print("ADC Value (elemento 100): ");
+        Serial.println(adc_buffer[100]);  // Stampa elemento 100 invece di 0
+        first_adc = adc_buffer[100] >> 4;  // Usa elemento 100 anche per first_adc
         media_correlazione_32(adc_buffer, segnale_filtrato32, correlazione32, picchi32, distanze32, bits32, bytes32,
                              num_picchi, num_distanze, num_bits, country_code, device_code, crc_ok);
         statoacq = 0;
+        Serial.println("Acquisizione completata");
     }
 
     digitalWrite(ledverde, LOW);
