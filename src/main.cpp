@@ -2,7 +2,7 @@
 #include <driver/ledc.h>
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
-#include <driver/adc.h>
+#include "analog.h"
 
 hw_timer_t *timer = NULL;
 volatile bool buffer_ready = false;
@@ -14,9 +14,9 @@ const char *password = "scheggia2000";
 #define PWM_CHANNEL 0
 #define PWM_FREQ 134200
 #define PWM_RESOLUTION 4
-int statoacq = 0;  // Per il pulsante
-AsyncWebServer server(80);
+int statoacq = 0;
 AsyncWebSocket ws("/ws");
+AsyncWebServer server(80);
 #define pblue 39
 #define ledverde 21
 
@@ -36,17 +36,22 @@ uint16_t country_code = 0;
 uint64_t device_code = 0;
 bool crc_ok = false;
 
-#define ADC_CHANNEL ADC1_CHANNEL_0
-uint16_t first_adc = 0;
+#define ADC_CHANNEL 0 // ADC1_CHANNEL_0 (GPIO1)
 
 void IRAM_ATTR onTimer() {
+    REG_WRITE(GPIO_OUT_W1TS_REG, 1 << ledverde); // ledverde HIGH
     if (buffer_index < BUFFER_SIZE) {
-        adc_buffer[buffer_index] = adc1_get_raw(ADC1_CHANNEL_0);
-        buffer_index++;
+        if (!fadcBusy()) {
+            adc_buffer[buffer_index++] = fadcResult();
+            //adc_buffer[buffer_index++] = 0;
+            fadcStart(ADC_CHANNEL);
+        }
     }
     if (buffer_index >= BUFFER_SIZE) {
         buffer_ready = true;
+        timerAlarmDisable(timer);
     }
+    REG_WRITE(GPIO_OUT_W1TC_REG, 1 << ledverde); // ledverde LOW
 }
 
 void media_correlazione_32(uint16_t* segnale, int32_t* filt, int32_t* corr, int32_t* peaks, int32_t* dists, Bit* bits, uint8_t* bytes,
@@ -225,18 +230,17 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
                 Serial.println("Inizio acquisizione da WebSocket...");
                 buffer_index = 0;
                 buffer_ready = false;
+                timerAlarmEnable(timer);
                 timerStart(timer);
                 while (!buffer_ready) {
-                    delay(1);
+                    // Vuoto
                 }
                 timerStop(timer);
-
+                timerAlarmDisable(timer);
                 if (buffer_index >= BUFFER_SIZE) {
                     Serial.println("Invio buffer al client...");
                     client->binary((uint8_t*)adc_buffer, BUFFER_SIZE * sizeof(uint16_t));
                     Serial.println("Buffer inviato al client (binario)");
-                    // Opzionale: analisi
-                    first_adc = adc_buffer[0] >> 4;
                     media_correlazione_32(adc_buffer, segnale_filtrato32, correlazione32, picchi32, distanze32, bits32, bytes32,
                                          num_picchi, num_distanze, num_bits, country_code, device_code, crc_ok);
                 } else {
@@ -281,38 +285,53 @@ void setup() {
     ledcAttachPin(PWM_PIN, PWM_CHANNEL);
     ledcWrite(PWM_CHANNEL, 8);
 
-    adc1_config_width(ADC_WIDTH_12Bit);
-    adc1_config_channel_atten(ADC_CHANNEL, ADC_ATTEN_11db);
+    fadcInit(1, 1);
+    fadcStart(ADC_CHANNEL);
 
-    timer = timerBegin(1, 80, true);
+    timer = timerBegin(0, 80, true);
     timerAttachInterrupt(timer, &onTimer, true);
-    timerAlarmWrite(timer, 1000000 / 134200, true);
-    timerAlarmEnable(timer);
+    timerAlarmWrite(timer, 22, true);
 }
 
 void loop() {
     ws.cleanupClients();
 
-    // Acquisizione tramite pulsante
     int sblue = digitalRead(pblue);
     if (sblue == 0) {
         Serial.println("Pulsante premuto");
         statoacq ^= 1;
+        delay(50);
     }
 
     if (statoacq == 1) {
-        Serial.println("Inizio acquisizione da pulsante...");
+        Serial.println("Inizio acquisizione...");
         buffer_index = 0;
         buffer_ready = false;
+
+        timerAlarmEnable(timer);
         timerStart(timer);
+        uint32_t start_time = micros();
         while (!buffer_ready) {
-            delay(1);
+            // Vuoto
         }
-        timerStop(timer);
+        uint32_t end_time = micros();
+        timerAlarmDisable(timer);
 
         Serial.print("ADC Value (elemento 100): ");
-        Serial.println(adc_buffer[100]);  // Stampa elemento 100 invece di 0
-        first_adc = adc_buffer[100] >> 4;  // Usa elemento 100 anche per first_adc
+        Serial.println(adc_buffer[100]);
+        Serial.print("Tempo acquisizione: ");
+        Serial.print(end_time - start_time);
+        Serial.println(" us");
+        Serial.print("Frequenza campionamento: ");
+        Serial.print((float)BUFFER_SIZE / ((end_time - start_time) / 1000000.0));
+        Serial.println(" Hz");
+        Serial.println("Primi 10 valori ADC:");
+        for (int i = 0; i < 10; i++) {
+            Serial.print(" ");
+            Serial.print(adc_buffer[i]);
+        }
+        Serial.println();
+
         media_correlazione_32(adc_buffer, segnale_filtrato32, correlazione32, picchi32, distanze32, bits32, bytes32,
                              num_picchi, num_distanze, num_bits, country_code, device_code, crc_ok);
         statoacq = 0;
@@ -320,5 +339,5 @@ void loop() {
     }
 
     digitalWrite(ledverde, LOW);
-    delay(1);
+    delay(100);
 }
