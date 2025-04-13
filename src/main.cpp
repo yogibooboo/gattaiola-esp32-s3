@@ -286,7 +286,10 @@ void setup() {
 
     // Configurazione ADC con FastAnalogRead
     fadcInit(1, 1); // 1 pin, GPIO1 (ADC1_CHANNEL_0)
-    fadcStart(ADC_CHANNEL); // Conversione iniziale per preparare l'ADC
+        // Configura i registri per conversione continua
+        SENS.sar_meas1_ctrl2.sar1_en_pad = (1 << ADC_CHANNEL); // Imposta il canale
+        SENS.sar_meas1_ctrl2.meas1_start_sar = 1;             // Avvia l'ADC
+    //fadcStart(ADC_CHANNEL); // Conversione iniziale per preparare l'ADC
 
     timer = timerBegin(0, 4, true); // Timer 0, prescaler 8
     timerAttachInterrupt(timer, &onTimer, true);
@@ -295,6 +298,7 @@ void setup() {
 
 void loop() {
     //Serial.println("Loop in esecuzione..."); // Debug
+
     ws.cleanupClients();
 
     int sblue = digitalRead(pblue);
