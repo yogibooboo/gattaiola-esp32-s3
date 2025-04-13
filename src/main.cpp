@@ -288,9 +288,9 @@ void setup() {
     fadcInit(1, 1); // 1 pin, GPIO1 (ADC1_CHANNEL_0)
     fadcStart(ADC_CHANNEL); // Conversione iniziale per preparare l'ADC
 
-    timer = timerBegin(0, 8, true); // Timer 0, prescaler 8
+    timer = timerBegin(0, 4, true); // Timer 0, prescaler 8
     timerAttachInterrupt(timer, &onTimer, true);
-    timerAlarmWrite(timer, 75, true); // ~133333 Hz
+    timerAlarmWrite(timer, 149, true); // ~133333 Hz
 }
 
 void loop() {
