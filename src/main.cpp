@@ -2,7 +2,7 @@
 #include <driver/ledc.h>
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
-#include "analog.h"
+#include "analog.h" // ESP32-S3-FastAnalogRead
 
 hw_timer_t *timer = NULL;
 volatile bool buffer_ready = false;
@@ -39,19 +39,18 @@ bool crc_ok = false;
 #define ADC_CHANNEL 0 // ADC1_CHANNEL_0 (GPIO1)
 
 void IRAM_ATTR onTimer() {
-    REG_WRITE(GPIO_OUT_W1TS_REG, 1 << ledverde); // ledverde HIGH
+    digitalWrite(ledverde, HIGH);
     if (buffer_index < BUFFER_SIZE) {
-        if (!fadcBusy()) {
-            adc_buffer[buffer_index++] = fadcResult();
-            //adc_buffer[buffer_index++] = 0;
-            fadcStart(ADC_CHANNEL);
+        if (!fadcBusy()) { // ADC non occupato
+            adc_buffer[buffer_index++] = fadcResult(); // Leggi risultato
+            fadcStart(ADC_CHANNEL); // Avvia nuova conversione
         }
     }
     if (buffer_index >= BUFFER_SIZE) {
         buffer_ready = true;
-        timerAlarmDisable(timer);
+        timerAlarmDisable(timer); // Ferma interrupt
     }
-    REG_WRITE(GPIO_OUT_W1TC_REG, 1 << ledverde); // ledverde LOW
+    digitalWrite(ledverde, LOW);
 }
 
 void media_correlazione_32(uint16_t* segnale, int32_t* filt, int32_t* corr, int32_t* peaks, int32_t* dists, Bit* bits, uint8_t* bytes,
@@ -285,15 +284,17 @@ void setup() {
     ledcAttachPin(PWM_PIN, PWM_CHANNEL);
     ledcWrite(PWM_CHANNEL, 8);
 
-    fadcInit(1, 1);
-    fadcStart(ADC_CHANNEL);
+    // Configurazione ADC con FastAnalogRead
+    fadcInit(1, 1); // 1 pin, GPIO1 (ADC1_CHANNEL_0)
+    fadcStart(ADC_CHANNEL); // Conversione iniziale per preparare l'ADC
 
-    timer = timerBegin(0, 80, true);
+    timer = timerBegin(0, 8, true); // Timer 0, prescaler 8
     timerAttachInterrupt(timer, &onTimer, true);
-    timerAlarmWrite(timer, 22, true);
+    timerAlarmWrite(timer, 75, true); // ~133333 Hz
 }
 
 void loop() {
+    //Serial.println("Loop in esecuzione..."); // Debug
     ws.cleanupClients();
 
     int sblue = digitalRead(pblue);
@@ -327,10 +328,9 @@ void loop() {
         Serial.println(" Hz");
         Serial.println("Primi 10 valori ADC:");
         for (int i = 0; i < 10; i++) {
-            Serial.print(" ");
             Serial.print(adc_buffer[i]);
+            Serial.print(" ");
         }
-        Serial.println();
 
         media_correlazione_32(adc_buffer, segnale_filtrato32, correlazione32, picchi32, distanze32, bits32, bytes32,
                              num_picchi, num_distanze, num_bits, country_code, device_code, crc_ok);
@@ -339,5 +339,5 @@ void loop() {
     }
 
     digitalWrite(ledverde, LOW);
-    delay(100);
+    delay(100); // Feed WDT
 }
