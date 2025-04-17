@@ -3,41 +3,49 @@
 
 #include <Arduino.h>
 
-// Definizione della struttura Bit
-struct Bit {
-    int value;
-    int32_t pos;
-};
+// Definizioni esistenti
+#define ADC_BUFFER_SIZE 16384
+#define CORR_BUFFER_SIZE 256
+#define PEAKS_BUFFER_SIZE 256
+#define DIST_BUFFER_SIZE 256
 
-// Dichiarazioni variabili globali
-extern volatile bool buffer_ready; // Compatibilità
-extern volatile int32_t available_samples; // Contatore di campioni disponibili
-extern uint32_t i; // Indice a 32 bit per il consumatore
+// Struttura Bit
+typedef struct {
+    int value;
+    int pos;
+} Bit;
+
+// Variabili globali esistenti
+extern volatile bool buffer_ready;
+extern volatile int32_t available_samples;
+extern uint32_t i;
+extern volatile uint32_t i_interrupt;
 extern int statoacq;
-extern volatile uint16_t adc_buffer[16384]; // Buffer circolare, 2^14
-extern int32_t filt[256]; // Ex segnale_filtrato32
-extern int32_t corr[256]; // Ex correlazione32
-extern int32_t peaks[256]; // Ex picchi32
-extern int32_t dist[256]; // Ex distanze32
-extern Bit bits[256]; // Ex bits32
-extern uint8_t bytes[10]; // Ex bytes32
+extern volatile uint16_t adc_buffer[ADC_BUFFER_SIZE];
+extern int32_t filt[CORR_BUFFER_SIZE];
+extern int32_t corr[CORR_BUFFER_SIZE];
+extern int32_t peaks[PEAKS_BUFFER_SIZE];
+extern int32_t dist[DIST_BUFFER_SIZE];
+extern Bit bits[DIST_BUFFER_SIZE];
+extern uint8_t bytes[10];
 extern int32_t num_picchi;
 extern int32_t num_distanze;
+extern int32_t num_bits;
 extern uint16_t country_code;
 extern uint64_t device_code;
 extern bool crc_ok;
 
-// Buffer circolare per logging non bloccante
-#define LOG_BUFFER_SIZE 1024
-extern char log_buffer[LOG_BUFFER_SIZE];
-extern volatile size_t log_head;
-extern volatile size_t log_tail;
-extern portMUX_TYPE log_mutex;
+// Nuove variabili globali
+extern volatile uint32_t sync_count; // Contatore sync per stampa
+extern volatile uint32_t door_sync_count; // Contatore sync per gattaiola
+extern volatile uint8_t last_sequence[10]; // Ultima sequenza valida
+extern volatile uint64_t last_device_code; // Ultimo Device Code
+extern volatile uint32_t last_sync_i; // i dell'ultimo sync
+extern volatile bool door_open; // Stato gattaiola
+extern volatile TickType_t door_timer_start; // Inizio timer
+extern volatile uint32_t display_sync_count; // Contatore sync con CRC OK per stampa
 
-// Dichiarazioni funzioni
-void IRAM_ATTR onTimer();
-void media_correlazione_32();
 void start_rfid_task();
-void logNonBlocking(const char* msg);
+void IRAM_ATTR onTimer(); // Dichiarazione di onTimer
 
 #endif
