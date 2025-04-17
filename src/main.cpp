@@ -15,9 +15,30 @@ const char *password = "scheggia2000";
 #define PWM_RESOLUTION 4
 AsyncWebSocket ws("/ws");
 AsyncWebServer server(80);
-#define pblue 39
+#define pblue 38
 #define ledverde 21
 #define ADC_CHANNEL 0
+
+// Task per stampare i log
+void printTask(void *pvParameters) {
+    while (true) {
+        portENTER_CRITICAL(&log_mutex);
+        if (log_tail != log_head) {
+            char msg[256];
+            size_t pos = 0;
+            while (log_tail != log_head && pos < sizeof(msg) - 1) {
+                msg[pos++] = log_buffer[log_tail];
+                log_tail = (log_tail + 1) % LOG_BUFFER_SIZE;
+            }
+            msg[pos] = 0;
+            portEXIT_CRITICAL(&log_mutex);
+            Serial.print(msg);
+        } else {
+            portEXIT_CRITICAL(&log_mutex);
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+        }
+    }
+}
 
 void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
     if (type == WS_EVT_CONNECT) {
@@ -31,25 +52,8 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
             Serial.printf("Ricevuto dal client: %s\n", (char*)data);
             if (strcmp((char*)data, "get_buffer") == 0) {
                 Serial.println("Inizio acquisizione da WebSocket...");
-                buffer_index = 0;
-                buffer_ready = false;
-                timerAlarmEnable(timer);
-                timerStart(timer);
-                while (!buffer_ready) {
-                    // Vuoto
-                }
-                timerStop(timer);
-                timerAlarmDisable(timer);
-                if (buffer_index >= 10000) {
-                    Serial.println("Invio buffer al client...");
-                    client->binary((uint8_t*)adc_buffer, 10000 * sizeof(uint16_t));
-                    Serial.println("Buffer inviato al client (binario)");
-                    media_correlazione_32(adc_buffer, segnale_filtrato32, correlazione32, picchi32, distanze32, bits32, bytes32,
-                                         num_picchi, num_distanze, num_bits, country_code, device_code, crc_ok);
-                } else {
-                    Serial.println("Errore: buffer non pieno");
-                    client->text("Errore: buffer non pieno");
-                }
+                Serial.println("Comando get_buffer temporaneamente disabilitato");
+                client->text("Comando get_buffer temporaneamente disabilitato");
             }
         }
     }
@@ -97,6 +101,9 @@ void setup() {
     timerAlarmWrite(timer, 149, true);
 
     start_rfid_task(); // Avvia task sul core 1
+    xTaskCreatePinnedToCore(printTask, "Print_Task", 4096, NULL, 1, NULL, 0); // PrintTask su core 0
+
+    timerAlarmEnable(timer); // Avvia acquisizione continua
 }
 
 void loop() {
