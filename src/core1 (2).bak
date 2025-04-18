@@ -3,10 +3,15 @@
 #include "soc/gpio_struct.h"
 #include "soc/io_mux_reg.h"
 
+
+portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
+
 // Definizione variabili globali
 volatile bool buffer_ready = false; // Compatibilità
 volatile int32_t available_samples = 0;
-uint32_t ia = -4; // Inizializzato a -4
+volatile int32_t available_samples2 = 0;
+
+volatile uint32_t ia = -4; // Inizializzato a -4
 volatile uint32_t i_interrupt = 0; // Esplicito volatile
 int statoacq = 0;
 volatile uint16_t adc_buffer[16384];
@@ -22,6 +27,7 @@ int32_t num_bits = 0;
 uint16_t country_code = 0;
 uint64_t device_code = 0;
 bool crc_ok = false;
+uint32_t dec_count=0;
 
 // Nuove variabili globali
 volatile uint32_t sync_count = 0;
@@ -33,19 +39,60 @@ volatile bool door_open = false;
 volatile TickType_t door_timer_start = 0;
 volatile uint32_t display_sync_count = 0; // Contatore sync con CRC OK
 
-portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
+int32_t pippo = 0;
 
 // Interrupt produttore
 void IRAM_ATTR onTimer() {
     //digitalWrite(21, HIGH);
     if (!fadcBusy()) {
         adc_buffer[i_interrupt & 0x3FFF] = fadcResult();
+
         available_samples++; // Atomico
+        available_samples2++;
         i_interrupt++;
+
         fadcStart(0);
+        
     }
+    
     //digitalWrite(21, LOW);
 }
+
+/*void IRAM_ATTR onTimer() {
+    //portENTER_CRITICAL(&mux); // Disabilita interrupts a livello HW
+ 
+    
+    available_samples++; // Atomico
+    available_samples2++; // Atomico
+    
+    i_interrupt++;    
+    //portEXIT_CRITICAL(&mux);
+}*/
+/*void media_correlazione_32() {
+    while (true) {
+ 
+
+        // Controlla se ci sono dati
+        
+        while (available_samples <= 0) {
+            //taskYIELD(); // Cede il controllo senza aspettare 1 ms
+            vTaskDelay(2 / portTICK_PERIOD_MS);
+            
+  
+        }
+        
+        // Elabora un campione
+        portENTER_CRITICAL(&mux);
+        available_samples--;
+        available_samples2--;
+        ia++;
+        portEXIT_CRITICAL(&mux);
+        
+
+        
+    }
+}*/
+
 
 // Funzione di analisi incrementale
 void media_correlazione_32() {
@@ -62,25 +109,36 @@ void media_correlazione_32() {
     GPIO.enable1_w1ts.val = (1 << (41 - 32));
     bool gpio41_state = false, gpio39_state = false;
     static int32_t loop_counter = 0;
+    static int32_t pippo = 0;
     if (!initialized) {
         num_picchi = num_distanze = num_bits = 0;
         for (int j = 0; j < 10; j++) bytes[j] = 0;
         for (int j = 0; j < 256; j++) filt[j] = corr[j] = 0;
         initialized = true;
     }
-
+    
     while (true) {
-        
-        // Controlla se ci sono dati
-        if (available_samples <= 0) {
-            vTaskDelay(1 / portTICK_PERIOD_MS);
-            continue;
-        }
+ 
 
+        // Controlla se ci sono dati
+        //pippo = available_samples;
+        while (available_samples <= 0) {
+            //taskYIELD(); // Cede il controllo senza aspettare 1 ms
+            vTaskDelay(1 / portTICK_PERIOD_MS);
+            //continue;
+        
+        
+        }
+        
         // Elabora un campione
         portENTER_CRITICAL(&mux);
         available_samples--; // Atomico
-        portEXIT_CRITICAL(&mux);
+        ia++;
+        portENTER_CRITICAL(&mux);
+        
+        /*if ((pippo - 1) != available_samples) {
+            printf("Error: pippo=%ld, available_samples=%ld\n", (long)pippo, (long)available_samples);
+        }*/
 
         // Logica di analisi
         const int larghezza_finestra = 8;
@@ -199,7 +257,7 @@ void media_correlazione_32() {
                                 }
                                 crc_ok = (crc == 0);
                                 if (crc_ok) {
-                                    digitalWrite(21, HIGH);
+                                    
                                     country_code = (bytes[5] << 2) | (bytes[4] >> 6);
                                     device_code = ((uint64_t)(bytes[4] & 0x3F) << 32) | ((uint64_t)bytes[3] << 24) |
                                                   ((uint64_t)bytes[2] << 16) | (bytes[1] << 8) | bytes[0];
@@ -221,12 +279,13 @@ void media_correlazione_32() {
             }
         }
         
-        ia++; // Avanza al prossimo campione
+        //ia++; // Avanza al prossimo campione
     }
 }
 
 // Task FreeRTOS per il core 1
 static void rfid_task(void *pvParameters) {
+    printf("rfid_task running on core %d\n", xPortGetCoreID());
     media_correlazione_32(); // Avvia analisi continua
     vTaskDelete(NULL); // Non raggiunto, ma per sicurezza
 }

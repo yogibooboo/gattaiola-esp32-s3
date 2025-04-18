@@ -19,11 +19,9 @@ AsyncWebServer server(80);
 #define pblue 38
 #define ledverde 21
 #define ADC_CHANNEL 0
-#define DOOR_GPIO GPIO_NUM_15 // GPIO per gattaiola
+#define DOOR_GPIO GPIO_NUM_21 // GPIO per gattaiola
 #define DOOR_TIMEOUT (10000 / portTICK_PERIOD_MS) // 10 s
 
-
-uint32_t contaporta = 0;
 // Task gestione gattaiola (core 0, ogni 100 ms)
 void door_task(void *pvParameters) {
     while (true) {
@@ -35,15 +33,11 @@ void door_task(void *pvParameters) {
             } else {
                 door_timer_start = xTaskGetTickCount(); // Azzera timer
             }
-            contaporta=0;
             door_sync_count = 0;
         } else if (door_open) {
             TickType_t now = xTaskGetTickCount();
-            contaporta=(now - door_timer_start);
             if ((now - door_timer_start) >= DOOR_TIMEOUT) {
-                contaporta=12000;
                 gpio_set_level(DOOR_GPIO, 0); // Chiudi gattaiola
-                //digitalWrite(15, LOW);
                 door_open = false;
             }
         }
@@ -53,14 +47,15 @@ void door_task(void *pvParameters) {
 
 // Task di stampa (core 0, ogni 1 s)
 void print_task(void *pvParameters) {
+    printf("print_task running on core %d\n", xPortGetCoreID());
     while (true) {
         printf("Sync: %u, OK: %u, Last Seq: [%02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X], "
-               "Device Code: %llu, ia: %u, i_interrupt: %u, diff: %u, available_samples: %ld, contaporta: %u\n",
+               "Device Code: %llu, ia: %u, i_interrupt: %u, diff: %u, available_samples: %ld,as2: %ld\n",
                sync_count, display_sync_count,
                last_sequence[0], last_sequence[1], last_sequence[2], last_sequence[3],
                last_sequence[4], last_sequence[5], last_sequence[6], last_sequence[7],
                last_sequence[8], last_sequence[9],
-               (unsigned long long)last_device_code, ia, i_interrupt,(i_interrupt-ia), (long)available_samples,contaporta);
+               (unsigned long long)last_device_code, ia, i_interrupt,(i_interrupt-ia), (long)available_samples, (long)available_samples2);
         sync_count = 0;
         display_sync_count = 0;
         vTaskDelay(1000 / portTICK_PERIOD_MS); // 1 s
@@ -104,7 +99,6 @@ void setup() {
 
     pinMode(pblue, INPUT_PULLUP);
     pinMode(ledverde, OUTPUT);
-    //pinMode(15,OUTPUT);
 
     WiFi.begin(ssid, password);
     Serial.println("Connessione al Wi-Fi in corso...");
@@ -135,6 +129,7 @@ void setup() {
     SENS.sar_meas1_ctrl2.sar1_en_pad = (1 << ADC_CHANNEL);
     SENS.sar_meas1_ctrl2.meas1_start_sar = 1;
 
+    //timer = timerBegin(0, 32, true);
     timer = timerBegin(0, 4, true);
     timerAttachInterrupt(timer, &onTimer, true);
     timerAlarmWrite(timer, 149, true);
