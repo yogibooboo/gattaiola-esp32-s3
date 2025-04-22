@@ -79,7 +79,7 @@ void media_correlazione_32() {
 
         // Elabora un campione
         portENTER_CRITICAL(&mux);
-        available_samples--; // Atomico
+        available_samples--; // sembra non essere per niente atomico
         portEXIT_CRITICAL(&mux);
 
         // Logica di analisi

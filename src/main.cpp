@@ -19,7 +19,7 @@ AsyncWebServer server(80);
 #define pblue 38
 #define ledverde 21
 #define ADC_CHANNEL 0
-#define DOOR_GPIO GPIO_NUM_15 // GPIO per gattaiola
+#define DOOR_GPIO GPIO_NUM_20 // GPIO per gattaiola
 #define DOOR_TIMEOUT (10000 / portTICK_PERIOD_MS) // 10 s
 
 
@@ -29,7 +29,7 @@ void door_task(void *pvParameters) {
     while (true) {
         if (door_sync_count > 0) {
             if (!door_open) {
-                gpio_set_level(DOOR_GPIO, 1); // Apri gattaiola
+                gpio_set_level(DOOR_GPIO, 0); // Apri gattaiola
                 door_open = true;
                 door_timer_start = xTaskGetTickCount();
             } else {
@@ -42,7 +42,7 @@ void door_task(void *pvParameters) {
             contaporta=(now - door_timer_start);
             if ((now - door_timer_start) >= DOOR_TIMEOUT) {
                 contaporta=12000;
-                gpio_set_level(DOOR_GPIO, 0); // Chiudi gattaiola
+                gpio_set_level(DOOR_GPIO, 1); // Chiudi gattaiola
                 //digitalWrite(15, LOW);
                 door_open = false;
             }
@@ -100,7 +100,7 @@ void setup() {
         .intr_type = GPIO_INTR_DISABLE
     };
     gpio_config(&io_conf);
-    gpio_set_level(DOOR_GPIO, 0); // Porta chiusa
+    gpio_set_level(DOOR_GPIO, 1); // Porta chiusa
 
     pinMode(pblue, INPUT_PULLUP);
     pinMode(ledverde, OUTPUT);
