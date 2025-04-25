@@ -5,6 +5,7 @@
 #include <driver/gpio.h>
 #include "analog.h"
 #include "core1.h"
+#include <driver/rmt.h>  // Aggiunto per il modulo RMT
 
 hw_timer_t *timer = NULL;
 
@@ -163,6 +164,39 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
     }
 }
 
+// Configurazione RMT per generare onda quadra a 134,2 kHz
+#define RMT_CHANNEL RMT_CHANNEL_0
+#define RMT_CLK_DIV 1 // Riduciamo il divisore per maggiore precisione
+#define RMT_TICK_1_US (80000000 / RMT_CLK_DIV / 1000000) // Tick per 1 us
+
+void setupRMT() {
+    rmt_config_t config = {};
+    config.rmt_mode = RMT_MODE_TX;
+    config.channel = RMT_CHANNEL;
+    config.gpio_num = (gpio_num_t)PWM_PIN;
+    config.clk_div = RMT_CLK_DIV;
+    config.mem_block_num = 1;
+    config.tx_config.loop_en = true; // Ripetizione continua
+    config.tx_config.carrier_en = false;
+    config.tx_config.idle_level = RMT_IDLE_LEVEL_LOW;
+    config.tx_config.idle_output_en = true;
+
+    rmt_config(&config);
+    rmt_driver_install(RMT_CHANNEL, 0, 0);
+
+    // Calcolo dei tick per il periodo (in microsecondi)
+    float period_us = 1000000.0 / PWM_FREQ; // Periodo in us (circa 7,451 us)
+    uint32_t period_ticks = (uint32_t)(period_us * RMT_TICK_1_US); // Tick per periodo
+    uint32_t high_ticks = period_ticks / 2; // Duty cycle 50%
+    uint32_t low_ticks = period_ticks - high_ticks;
+
+    rmt_item32_t items[2] = {
+        {{{ high_ticks, 1, low_ticks, 0 }}},
+        {{{ high_ticks, 1, low_ticks, 0 }}}
+    };
+    rmt_write_items(RMT_CHANNEL, items, 2, false);
+}
+
 void setup() {
     Serial.begin(115200);
     delay(1000);
@@ -205,9 +239,13 @@ void setup() {
     server.begin();
     Serial.println("Server WebSocket avviato");
 
-    ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
-    ledcAttachPin(PWM_PIN, PWM_CHANNEL);
-    ledcWrite(PWM_CHANNEL, 8);
+    // Commentate le istruzioni LEDC
+    // ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+    // ledcAttachPin(PWM_PIN, PWM_CHANNEL);
+    // ledcWrite(PWM_CHANNEL, 8);
+
+    // Configura RMT al posto di LEDC
+    setupRMT();
 
     fadcInit(1, 1);
     SENS.sar_meas1_ctrl2.sar1_en_pad = (1 << ADC_CHANNEL);
