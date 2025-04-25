@@ -58,9 +58,9 @@ void media_correlazione_32() {
     static bool newpeak = false;
     static bool last_pblues = true; // Stato precedente di pblues (attivo basso)
     pinMode(41, OUTPUT);
-    pinMode(39, OUTPUT);
+    //pinMode(39, OUTPUT);
     GPIO.enable1_w1ts.val = (1 << (41 - 32));
-    bool gpio41_state = false, gpio39_state = false;
+    //bool gpio41_state = false, gpio39_state = false;
     static int32_t loop_counter = 0;
     if (!initialized) {
         num_picchi = num_distanze = num_bits = 0;
