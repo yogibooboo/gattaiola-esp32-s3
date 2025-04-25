@@ -30,7 +30,7 @@ AsyncWebServer server(80);
 #define STEP_B_MINUS 13
 #define ENABLE_PIN 9
 #define STEPS_PER_MOVEMENT 2500 // Numero di passi configurabile
-#define STEP_INTERVAL_US 1000 // Intervallo tra passi in microsecondi (0,1 ms = 100 us)
+#define STEP_INTERVAL_US 500 // Intervallo tra passi in microsecondi (0,1 ms = 100 us)
 
 // Sequenza delle fasi per full-step
 const uint8_t stepSequence[4][4] = {
