@@ -28,6 +28,7 @@ volatile uint32_t sync_count = 0;
 volatile uint32_t door_sync_count = 0;
 volatile uint8_t last_sequence[10];
 volatile uint64_t last_device_code = 0;
+volatile uint64_t last_country_code = 0;
 volatile uint32_t last_sync_i = 0;
 volatile bool door_open = false;
 volatile TickType_t door_timer_start = 0;
@@ -205,6 +206,7 @@ void media_correlazione_32() {
                                                   ((uint64_t)bytes[2] << 16) | (bytes[1] << 8) | bytes[0];
                                     memcpy((void*)last_sequence, bytes, 10); // Corretto con cast
                                     last_device_code = device_code; // Aggiunto
+                                    last_country_code = country_code; // Aggiunto
                                     door_sync_count++; // Incremento solo con CRC OK
                                     display_sync_count++; // Incremento solo con CRC OK
                                 }

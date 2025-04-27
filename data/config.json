@@ -1,0 +1,26 @@
+{
+    "door_timeout": 10000,
+    "steps_per_movement": 2500,
+    "step_interval_us": 500,
+    "authorized_cats": [
+        {
+            "device_code": 123456789012,
+            "country_code": 999,
+            "name": "Scheggia",
+            "authorized": true
+        },
+        {
+            "device_code": 260059133734,
+            "country_code": 380,
+            "name": "Ribes",
+            "authorized": true
+        },
+        {
+            "device_code": 155555555555,
+            "country_code": 888,
+            "name": "Tigro",
+            "authorized": false
+        }
+    ]
+ 
+}
