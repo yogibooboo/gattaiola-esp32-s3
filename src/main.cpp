@@ -62,8 +62,8 @@ volatile bool motorDirection = true; // true = orario (apertura), false = antior
 hw_timer_t *stepTimer = NULL;
 portMUX_TYPE stepTimerMux = portMUX_INITIALIZER_UNLOCKED;
 
-// Variabile globale per il country code dell'ultimo gatto rilevato
-//uint16_t last_country_code = 0; // Per print_task
+// Dichiarazione del buffer statico in SRAM
+uint16_t temp_buffer[10000];
 
 // ISR per il controllo delle fasi
 void IRAM_ATTR onStepTimer() {
@@ -252,6 +252,7 @@ void print_task(void *pvParameters) {
     }
 }
 
+// Gestione eventi WebSocket
 void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
     if (type == WS_EVT_CONNECT) {
         Serial.println("Client WebSocket connesso");
@@ -264,13 +265,30 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
             Serial.printf("Ricevuto dal client: %s\n", (char*)data);
             if (strcmp((char*)data, "get_buffer") == 0) {
                 Serial.println("Inizio acquisizione da WebSocket...");
-                Serial.println("Comando get_buffer temporaneamente disabilitato");
-                client->text("Comando get_buffer temporaneamente disabilitato");
+                // Leggi i_interrupt (senza sincronizzazione)
+                uint32_t current_index = i_interrupt;
+                // Calcola l'indice di partenza per le 10.000 misure precedenti
+                uint32_t start_index = (current_index - 10000 + ADC_BUFFER_SIZE) % ADC_BUFFER_SIZE;
+                Serial.printf("DEBUG: i_interrupt=%u, start_index=%u\n", current_index, start_index);
+                // Copia le 10.000 misure in temp_buffer, gestendo il wrap-around
+                if (start_index + 10000 <= ADC_BUFFER_SIZE) {
+                    // Copia diretta
+                    memcpy(temp_buffer, (const void*)&adc_buffer[start_index], 10000 * sizeof(uint16_t));
+                } else {
+                    // Copia in due blocchi per il wrap-around
+                    uint32_t first_chunk_size = ADC_BUFFER_SIZE - start_index;
+                    uint32_t second_chunk_size = 10000 - first_chunk_size;
+                    memcpy(temp_buffer, (const void*)&adc_buffer[start_index], first_chunk_size * sizeof(uint16_t));
+                    memcpy(&temp_buffer[first_chunk_size], (const void*)adc_buffer, second_chunk_size * sizeof(uint16_t));
+                }
+                // Trasmetti il buffer
+                Serial.println("Invio buffer al client...");
+                client->binary((uint8_t*)temp_buffer, 10000 * sizeof(uint16_t));
+                Serial.println("Buffer inviato al client (binario)");
             }
         }
     }
 }
-
 // Configurazione RMT per generare onda quadra a 134,2 kHz
 #define RMT_CHANNEL RMT_CHANNEL_0
 #define RMT_CLK_DIV 1

@@ -4,8 +4,8 @@
     "step_interval_us": 500,
     "authorized_cats": [
         {
-            "device_code": 123456789012,
-            "country_code": 999,
+            "device_code": 263002119568,
+            "country_code": 900,
             "name": "Scheggia",
             "authorized": true
         },
@@ -16,7 +16,7 @@
             "authorized": true
         },
         {
-            "device_code": 263002119568,
+            "device_code": 123456789012,
             "country_code": 888,
             "name": "Tigro",
             "authorized": false
