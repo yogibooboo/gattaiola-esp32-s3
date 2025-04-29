@@ -40,7 +40,7 @@ extern volatile uint32_t sync_count; // Contatore sync per stampa
 extern volatile uint32_t door_sync_count; // Contatore sync per gattaiola
 extern volatile uint8_t last_sequence[10]; // Ultima sequenza valida
 extern volatile uint64_t last_device_code; // Ultimo Device Code
-extern volatile uint64_t last_country_code; // Ultimo Country Code
+extern volatile uint16_t last_country_code; // Ultimo Country Code
 extern volatile uint32_t last_sync_i; // i dell'ultimo sync
 extern volatile bool door_open; // Stato gattaiola
 extern volatile TickType_t door_timer_start; // Inizio timer

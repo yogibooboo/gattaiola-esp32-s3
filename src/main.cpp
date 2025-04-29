@@ -245,7 +245,7 @@ void print_task(void *pvParameters) {
                last_sequence[0], last_sequence[1], last_sequence[2], last_sequence[3],
                last_sequence[4], last_sequence[5], last_sequence[6], last_sequence[7],
                last_sequence[8], last_sequence[9],
-               (unsigned long long)last_device_code, last_country_code, ia, i_interrupt, (i_interrupt-ia), (long)available_samples, contaporta);
+               (unsigned long long)last_device_code, (long)last_country_code, ia, i_interrupt, (i_interrupt-ia), (long)available_samples, contaporta);
         sync_count = 0;
         display_sync_count = 0;
         vTaskDelay(1000 / portTICK_PERIOD_MS);
