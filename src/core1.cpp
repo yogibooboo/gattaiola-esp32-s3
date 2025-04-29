@@ -41,7 +41,7 @@ void IRAM_ATTR onTimer() {
     //digitalWrite(21, HIGH);
     if (!fadcBusy()) {
         adc_buffer[i_interrupt & 0x3FFF] = fadcResult();
-        available_samples++; // Atomico
+        //available_samples++; // Atomico
         i_interrupt++;
         fadcStart(0);
     }
@@ -73,15 +73,16 @@ void media_correlazione_32() {
     while (true) {
         
         // Controlla se ci sono dati
+        available_samples=(i_interrupt-ia)&0x3fff;
         if (available_samples <= 0) {
             vTaskDelay(1 / portTICK_PERIOD_MS);
             continue;
         }
 
         // Elabora un campione
-        portENTER_CRITICAL(&mux);
-        available_samples--; // sembra non essere per niente atomico
-        portEXIT_CRITICAL(&mux);
+        //portENTER_CRITICAL_ISR(&mux);
+        //available_samples--; // sembra non essere per niente atomico
+        //portEXIT_CRITICAL_ISR(&mux);
 
         // Logica di analisi
         const int larghezza_finestra = 8;

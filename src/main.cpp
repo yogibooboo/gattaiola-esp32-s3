@@ -200,7 +200,7 @@ void door_task(void *pvParameters) {
                     break;
                 }
             }
-            Serial.printf("Rilevato gatto: %s, Autorizzato: %s\n", cat_name.c_str(), is_authorized ? "Sì" : "No");
+            
 
             if (is_authorized && !door_open) {
                 gpio_set_level(DOOR_GPIO, 0);
@@ -208,6 +208,7 @@ void door_task(void *pvParameters) {
                 door_open = true;
                 door_timer_start = xTaskGetTickCount();
                 startMotor(true);
+                Serial.printf("Rilevato gatto: %s, Autorizzato: %s\n", cat_name.c_str(), is_authorized ? "Sì" : "No");
             } else if (is_authorized) {
                 door_timer_start = xTaskGetTickCount();
             }

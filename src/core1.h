@@ -2,6 +2,7 @@
 #define CORE1_H
 
 #include <Arduino.h>
+#include <freertos/portmacro.h>
 
 // Definizioni esistenti
 #define ADC_BUFFER_SIZE 16384
