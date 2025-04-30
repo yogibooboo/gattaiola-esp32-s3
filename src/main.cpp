@@ -239,17 +239,25 @@ void door_task(void *pvParameters) {
 
 // Task di stampa (core 0, ogni 1 s)
 void print_task(void *pvParameters) {
+    TickType_t last_wake_time = xTaskGetTickCount();
+    const TickType_t interval = 1000 / portTICK_PERIOD_MS; // 1 s in tick
+    uint32_t last_i_interrupt=0;
+    uint32_t freq=0;
     while (true) {
+        freq=i_interrupt-last_i_interrupt;
+        last_i_interrupt=i_interrupt;
         printf("Sync: %u, OK: %u, Last Seq: [%02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X], "
-               "Device Code: %llu, Country Code: %u, ia: %u, i_interrupt: %u, diff: %u, available_samples: %ld, contaporta: %u\n",
+               "DC: %llu, CC: %u, ia: %u, i_i: %u, diff: %u, freq: %u, a_s: %ld, contap: %u\n",
                sync_count, display_sync_count,
                last_sequence[0], last_sequence[1], last_sequence[2], last_sequence[3],
                last_sequence[4], last_sequence[5], last_sequence[6], last_sequence[7],
                last_sequence[8], last_sequence[9],
-               (unsigned long long)last_device_code, (long)last_country_code, ia, i_interrupt, (i_interrupt-ia), (long)available_samples, contaporta);
+               (unsigned long long)last_device_code, (long)last_country_code, ia, i_interrupt, (i_interrupt-ia), (freq),(long)available_samples, contaporta);
         sync_count = 0;
         display_sync_count = 0;
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        
+        // Attendi fino al prossimo intervallo di 1 s
+        vTaskDelayUntil(&last_wake_time, interval);
     }
 }
 
