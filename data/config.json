@@ -2,11 +2,14 @@
     "door_timeout": 10000,
     "steps_per_movement": 2500,
     "step_interval_us": 500,
+    "wifi_reconnect_delay": 1000,
+    "unauthorized_log_interval": 60000,
+    "wifi_verbose_log": true,
     "authorized_cats": [
         {
             "device_code": 263002119568,
             "country_code": 900,
-            "name": "Scheggia",
+            "name": "Scheggiafinto",
             "authorized": true
         },
         {
@@ -16,10 +19,16 @@
             "authorized": true
         },
         {
-            "device_code": 123456789012,
-            "country_code": 888,
+            "device_code": 263002119516,
+            "country_code": 900,
             "name": "Tigro",
-            "authorized": false
+            "authorized": true
+        },
+        {
+            "device_code": 260160743955,
+            "country_code": 380,
+            "name": "Scheggia",
+            "authorized": true
         }
     ]
  
