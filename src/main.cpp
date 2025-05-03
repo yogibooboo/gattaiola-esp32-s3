@@ -397,7 +397,8 @@ void setup() {
 
     timer = timerBegin(0, 4, true);
     timerAttachInterrupt(timer, &onTimer, true);
-    timerAlarmWrite(timer, 149, true);
+    //timerAlarmWrite(timer, 149, true);
+    timerAlarmWrite(timer, 298, true);
 
     pinMode(STEP_A_PLUS, OUTPUT);
     pinMode(STEP_A_MINUS, OUTPUT);

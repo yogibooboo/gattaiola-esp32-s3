@@ -33,6 +33,7 @@ volatile uint32_t last_sync_i = 0;
 volatile bool door_open = false;
 volatile TickType_t door_timer_start = 0;
 volatile uint32_t display_sync_count = 0; // Contatore sync con CRC OK
+uint16_t datoadc=0;
 
 portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
@@ -40,8 +41,12 @@ portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 void IRAM_ATTR onTimer() {
     //digitalWrite(21, HIGH);
     if (!fadcBusy()) {
-        adc_buffer[i_interrupt & 0x3FFF] = fadcResult();
+        //adc_buffer[i_interrupt & 0x3FFF] = fadcResult();
+        datoadc= fadcResult();
+        adc_buffer[i_interrupt & 0x3FFF] = datoadc;
         //available_samples++; // Atomico
+        i_interrupt++;
+        adc_buffer[i_interrupt & 0x3FFF] = datoadc;
         i_interrupt++;
         fadcStart(0);
     }
