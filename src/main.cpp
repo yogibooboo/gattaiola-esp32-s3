@@ -89,6 +89,11 @@ portMUX_TYPE wifiMux = portMUX_INITIALIZER_UNLOCKED;
 unsigned long last_millis = 0;
 time_t local_time = 0;
 
+// Aggiungo l'enum per door_mode
+enum DoorMode { AUTO, ALWAYS_OPEN, ALWAYS_CLOSED };
+volatile DoorMode door_mode = AUTO; // Variabile globale
+portMUX_TYPE doorModeMux = portMUX_INITIALIZER_UNLOCKED;
+
 // Dichiarazione del buffer statico in SRAM
 uint16_t temp_buffer[10000];
 
@@ -180,6 +185,14 @@ bool readConfig() {
     UNAUTHORIZED_LOG_INTERVAL = doc["unauthorized_log_interval"] | 60000;
     WIFI_VERBOSE_LOG = doc["wifi_verbose_log"] | false;
 
+    // Leggo door_mode
+    String mode = doc["door_mode"] | "AUTO";
+    portENTER_CRITICAL(&doorModeMux);
+    if (mode == "ALWAYS_OPEN") door_mode = ALWAYS_OPEN;
+    else if (mode == "ALWAYS_CLOSED") door_mode = ALWAYS_CLOSED;
+    else door_mode = AUTO;
+    portEXIT_CRITICAL(&doorModeMux);
+
     JsonArray cats = doc["authorized_cats"];
     num_cats = min(cats.size(), (size_t)MAX_CATS);
     for (size_t i = 0; i < num_cats; i++) {
@@ -224,11 +237,52 @@ void writeDefaultConfig() {
     doc["wifi_reconnect_delay"] = 1000;
     doc["unauthorized_log_interval"] = 60000;
     doc["wifi_verbose_log"] = false;
+    doc["door_mode"] = "AUTO";
 
     JsonArray cats = doc.createNestedArray("authorized_cats");
 
     if (serializeJson(doc, file)) {
         Serial.println("Configurazione di default scritta su config.json");
+    } else {
+        Serial.println("Errore scrittura config.json");
+    }
+    file.close();
+}
+
+// Funzione per salvare la configurazione aggiornata
+void saveConfig() {
+    File file = SPIFFS.open("/config.json", "w");
+    if (!file) {
+        Serial.println("Errore: impossibile creare config.json");
+        return;
+    }
+
+    DynamicJsonDocument doc(2048);
+    doc["door_timeout"] = DOOR_TIMEOUT;
+    doc["steps_per_movement"] = STEPS_PER_MOVEMENT;
+    doc["step_interval_us"] = STEP_INTERVAL_US;
+    doc["wifi_reconnect_delay"] = WIFI_RECONNECT_DELAY;
+    doc["unauthorized_log_interval"] = UNAUTHORIZED_LOG_INTERVAL;
+    doc["wifi_verbose_log"] = WIFI_VERBOSE_LOG;
+
+    // Salvo door_mode
+    portENTER_CRITICAL(&doorModeMux);
+    if (door_mode == ALWAYS_OPEN) doc["door_mode"] = "ALWAYS_OPEN";
+    else if (door_mode == ALWAYS_CLOSED) doc["door_mode"] = "ALWAYS_CLOSED";
+    else doc["door_mode"] = "AUTO";
+    portEXIT_CRITICAL(&doorModeMux);
+
+    JsonArray cats = doc.createNestedArray("authorized_cats");
+    for (size_t i = 0; i < num_cats; i++) {
+        JsonObject cat = cats.createNestedObject();
+        cat["device_code"] = authorized_cats[i].device_code;
+        cat["country_code"] = authorized_cats[i].country_code;
+        cat["name"] = authorized_cats[i].name;
+        cat["authorized"] = authorized_cats[i].authorized;
+    }
+
+    if (serializeJson(doc, file)) {
+        Serial.println("Configurazione aggiornata su config.json");
     } else {
         Serial.println("Errore scrittura config.json");
     }
@@ -328,12 +382,73 @@ void door_task(void *pvParameters) {
     bool log_emitted = false;
     unsigned long last_unauthorized_log = 0;
 
+    // Stato iniziale basato su door_mode
+    portENTER_CRITICAL(&doorModeMux);
+    DoorMode initial_mode = door_mode;
+    portEXIT_CRITICAL(&doorModeMux);
+
+    if (initial_mode == ALWAYS_OPEN && !door_open) {
+        digitalWrite(ledverde, LOW);
+        door_open = true;
+        startMotor(true);
+        time_t now = local_time + (millis() - last_millis) / 1000;
+        char timestamp_full[20];
+        strftime(timestamp_full, sizeof(timestamp_full), "%Y-%m-%d %H:%M:%S", localtime(&now));
+        add_log_entry(timestamp_full, "mode_open", "Modalità Sempre Aperto", 0, 0, true);
+        Serial.println("Porta aperta per modalità ALWAYS_OPEN");
+    } else if (initial_mode == ALWAYS_CLOSED && door_open) {
+        digitalWrite(ledverde, HIGH);
+        door_open = false;
+        startMotor(false);
+        time_t now = local_time + (millis() - last_millis) / 1000;
+        char timestamp_full[20];
+        strftime(timestamp_full, sizeof(timestamp_full), "%Y-%m-%d %H:%M:%S", localtime(&now));
+        add_log_entry(timestamp_full, "mode_closed", "Modalità Sempre Chiuso", 0, 0, false);
+        Serial.println("Porta chiusa per modalità ALWAYS_CLOSED");
+    } else if (initial_mode == AUTO && door_open) {
+        digitalWrite(ledverde, HIGH);
+        door_open = false;
+        startMotor(false);
+        time_t now = local_time + (millis() - last_millis) / 1000;
+        char timestamp_full[20];
+        strftime(timestamp_full, sizeof(timestamp_full), "%Y-%m-%d %H:%M:%S", localtime(&now));
+        add_log_entry(timestamp_full, "mode_auto", "Modalità Automatica", 0, 0, false);
+        Serial.println("Porta chiusa per modalità AUTO");
+    }
+
     while (true) {
         time_t now = local_time + (millis() - last_millis) / 1000;
         strftime(time_str, sizeof(time_str), "%H:%M:%S", localtime(&now));
         char timestamp_full[20];
         strftime(timestamp_full, sizeof(timestamp_full), "%Y-%m-%d %H:%M:%S", localtime(&now));
 
+        portENTER_CRITICAL(&doorModeMux);
+        DoorMode current_mode = door_mode;
+        portEXIT_CRITICAL(&doorModeMux);
+
+        if (current_mode == ALWAYS_OPEN) {
+            if (!door_open) {
+                digitalWrite(ledverde, LOW);
+                door_open = true;
+                startMotor(true);
+                add_log_entry(timestamp_full, "mode_open", "Modalità Sempre Aperto", 0, 0, true);
+                Serial.println("Porta aperta per modalità ALWAYS_OPEN");
+            }
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+            continue; // Ignora altre logiche
+        } else if (current_mode == ALWAYS_CLOSED) {
+            if (door_open) {
+                digitalWrite(ledverde, HIGH);
+                door_open = false;
+                startMotor(false);
+                add_log_entry(timestamp_full, "mode_closed", "Modalità Sempre Chiuso", 0, 0, false);
+                Serial.println("Porta chiusa per modalità ALWAYS_CLOSED");
+            }
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+            continue; // Ignora altre logiche
+        }
+
+        // Modalità AUTO
         if (door_sync_count > 0) {
             digitalWrite(detected, LOW);
             bool is_authorized = false;
@@ -452,8 +567,10 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
         AwsFrameInfo *info = (AwsFrameInfo*)arg;
         if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
             data[len] = 0;
-            Serial.printf("[%s] Ricevuto dal client: %s\n", time_str, (char*)data);
-            if (strcmp((char*)data, "get_buffer") == 0) {
+            String message = (char*)data;
+            Serial.printf("[%s] Ricevuto dal client: %s\n", time_str, message.c_str());
+
+            if (message == "get_buffer") {
                 Serial.printf("[%s] Inizio acquisizione da WebSocket...\n", time_str);
                 uint32_t current_index = i_interrupt;
                 uint32_t start_index = (current_index - 10000 + ADC_BUFFER_SIZE) % ADC_BUFFER_SIZE;
@@ -469,6 +586,48 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
                 Serial.printf("[%s] Invio buffer al client...\n", time_str);
                 client->binary((uint8_t*)temp_buffer, 10000 * sizeof(uint16_t));
                 Serial.printf("[%s] Buffer inviato al client (binario)\n", time_str);
+            } else if (message == "get_log") {
+                Serial.printf("[%s] Invio log al client...\n", time_str);
+                DynamicJsonDocument doc(8192);
+                JsonArray log_array = doc.createNestedArray("log");
+                for (size_t i = 0; i < LOG_BUFFER_SIZE; i++) {
+                    size_t idx = (log_buffer_index - 1 - i + LOG_BUFFER_SIZE) % LOG_BUFFER_SIZE;
+                    if (log_buffer[idx].timestamp[0] == '\0') continue; // Entry vuota
+                    JsonObject entry = log_array.createNestedObject();
+                    entry["timestamp"] = log_buffer[idx].timestamp;
+                    entry["type"] = log_buffer[idx].type;
+                    entry["name"] = log_buffer[idx].name;
+                    entry["country_code"] = log_buffer[idx].country_code;
+                    entry["device_code"] = String((unsigned long long)log_buffer[idx].device_code);
+                    entry["authorized"] = log_buffer[idx].authorized;
+                }
+                String json;
+                serializeJson(doc, json);
+                client->text(json);
+                Serial.printf("[%s] Log inviato al client\n", time_str);
+            } else if (message.startsWith("set_door_mode:")) {
+                String mode = message.substring(14);
+                Serial.printf("[%s] Richiesta impostazione modalità: %s\n", time_str, mode.c_str());
+                bool mode_changed = false;
+                portENTER_CRITICAL(&doorModeMux);
+                if (mode == "AUTO" && door_mode != AUTO) {
+                    door_mode = AUTO;
+                    mode_changed = true;
+                } else if (mode == "ALWAYS_OPEN" && door_mode != ALWAYS_OPEN) {
+                    door_mode = ALWAYS_OPEN;
+                    mode_changed = true;
+                } else if (mode == "ALWAYS_CLOSED" && door_mode != ALWAYS_CLOSED) {
+                    door_mode = ALWAYS_CLOSED;
+                    mode_changed = true;
+                }
+                portEXIT_CRITICAL(&doorModeMux);
+                if (mode_changed) {
+                    saveConfig();
+                    Serial.printf("[%s] Modalità porta aggiornata: %s\n", time_str, mode.c_str());
+                    client->text("Mode updated: " + mode);
+                } else {
+                    client->text("Mode unchanged");
+                }
             }
         }
     }

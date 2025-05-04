@@ -5,6 +5,7 @@
     "wifi_reconnect_delay": 1000,
     "unauthorized_log_interval": 60000,
     "wifi_verbose_log": true,
+    "door_mode": "AUTO",
     "authorized_cats": [
         {
             "device_code": 263002119568,
@@ -31,5 +32,4 @@
             "authorized": true
         }
     ]
- 
 }
