@@ -97,39 +97,53 @@
     </div>
     <script>
         let ws = new WebSocket("ws://" + window.location.hostname + "/ws");
+
+        function updateLog(data) {
+            let logBody = document.getElementById("logBody");
+            logBody.innerHTML = "";
+            data.log.reverse().forEach(entry => {
+                let row = document.createElement("tr");
+                row.innerHTML = `
+                    <td>${entry.timestamp}</td>
+                    <td>${entry.type}</td>
+                    <td>${entry.name}</td>
+                    <td>${entry.country_code}</td>
+                    <td>${entry.device_code}</td>
+                    <td>${entry.authorized ? "Sì" : "No"}</td>
+                `;
+                logBody.appendChild(row);
+            });
+        }
+
         ws.onopen = function() {
             console.log("WebSocket connesso");
-            ws.send("get_log");
+            // Non inviamo get_log qui, perché il server invia il log all'apertura
         };
+
         ws.onmessage = function(event) {
             if (typeof event.data === "string") {
-                if (event.data.startsWith("Mode updated:") || event.data === "Mode unchanged") {
-                    alert(event.data);
+                if (event.data.startsWith("door_mode:")) {
+                    let mode = event.data.substring(10);
+                    document.getElementById("doorMode").value = mode;
+                    console.log("Modalità aggiornata: " + mode);
+                } else if (event.data.startsWith("Mode updated:") || event.data === "Mode unchanged") {
+                    // Popup rimosso
                 } else {
                     let data = JSON.parse(event.data);
-                    let logBody = document.getElementById("logBody");
-                    logBody.innerHTML = "";
-                    data.log.reverse().forEach(entry => {
-                        let row = document.createElement("tr");
-                        row.innerHTML = `
-                            <td>${entry.timestamp}</td>
-                            <td>${entry.type}</td>
-                            <td>${entry.name}</td>
-                            <td>${entry.country_code}</td>
-                            <td>${entry.device_code}</td>
-                            <td>${entry.authorized ? "Sì" : "No"}</td>
-                        `;
-                        logBody.appendChild(row);
-                    });
+                    if (data.log) {
+                        updateLog(data);
+                    }
                 }
             }
         };
+
         ws.onclose = function() {
             console.log("WebSocket disconnesso, riconnessione...");
             setTimeout(() => {
                 ws = new WebSocket("ws://" + window.location.hostname + "/ws");
             }, 5000);
         };
+
         function setDoorMode() {
             let mode = document.getElementById("doorMode").value;
             ws.send("set_door_mode:" + mode);

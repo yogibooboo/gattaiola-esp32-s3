@@ -23,7 +23,7 @@
             "device_code": 263002119516,
             "country_code": 900,
             "name": "Tigro",
-            "authorized": true
+            "authorized": false
         },
         {
             "device_code": 260160743955,
