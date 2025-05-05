@@ -94,17 +94,8 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
     strftime(time_str, sizeof(time_str), "%H:%M:%S", localtime(&now));
 
     if (type == WS_EVT_CONNECT) {
-        Serial.printf("[%s] Client WebSocket connesso\n", time_str);
-        // Invia lo stato corrente di door_mode
-        String mode_str;
-        portENTER_CRITICAL(&doorModeMux);
-        if (door_mode == ALWAYS_OPEN) mode_str = "ALWAYS_OPEN";
-        else if (door_mode == ALWAYS_CLOSED) mode_str = "ALWAYS_CLOSED";
-        else mode_str = "AUTO";
-        portEXIT_CRITICAL(&doorModeMux);
-        client->text("door_mode:" + mode_str);
-        Serial.printf("[%s] Inviato stato modalità: %s\n", time_str, mode_str.c_str());
-        // Invia il log corrente
+        Serial.printf("[%s] Client WebSocket connesso, ID: %u\n", time_str, client->id());
+        // Invio del log all'apertura, con ordine più recente in cima
         DynamicJsonDocument doc(8192);
         JsonArray log_array = doc.createNestedArray("log");
         for (size_t i = 0; i < LOG_BUFFER_SIZE; i++) {
@@ -121,18 +112,18 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
         String json;
         serializeJson(doc, json);
         client->text(json);
-        Serial.printf("[%s] Log iniziale inviato al client\n", time_str);
+        Serial.printf("[%s] Log iniziale inviato al client ID %u\n", time_str, client->id());
     } else if (type == WS_EVT_DISCONNECT) {
-        Serial.printf("[%s] Client WebSocket disconnesso\n", time_str);
+        Serial.printf("[%s] Client WebSocket disconnesso, ID: %u\n", time_str, client->id());
     } else if (type == WS_EVT_DATA) {
         AwsFrameInfo *info = (AwsFrameInfo*)arg;
         if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
             data[len] = 0;
             String message = (char*)data;
-            Serial.printf("[%s] Ricevuto dal client: %s\n", time_str, message.c_str());
+            Serial.printf("[%s] Ricevuto dal client ID %u: %s\n", time_str, client->id(), message.c_str());
 
             if (message == "get_buffer") {
-                Serial.printf("[%s] Inizio acquisizione da WebSocket...\n", time_str);
+                Serial.printf("[%s] Inizio acquisizione da WebSocket per client ID %u\n", time_str, client->id());
                 uint32_t current_index = i_interrupt;
                 uint32_t start_index = (current_index - 10000 + ADC_BUFFER_SIZE) % ADC_BUFFER_SIZE;
                 Serial.printf("[%s] DEBUG: i_interrupt=%u, start_index=%u\n", time_str, current_index, start_index);
@@ -144,11 +135,20 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
                     memcpy(temp_buffer, (const void*)&adc_buffer[start_index], first_chunk_size * sizeof(uint16_t));
                     memcpy(&temp_buffer[first_chunk_size], (const void*)adc_buffer, second_chunk_size * sizeof(uint16_t));
                 }
-                Serial.printf("[%s] Invio buffer al client...\n", time_str);
+                Serial.printf("[%s] Invio buffer al client ID %u\n", time_str, client->id());
                 client->binary((uint8_t*)temp_buffer, 10000 * sizeof(uint16_t));
-                Serial.printf("[%s] Buffer inviato al client (binario)\n", time_str);
+                Serial.printf("[%s] Buffer inviato al client ID %u\n", time_str, client->id());
+            } else if (message == "get_door_mode") {
+                String mode_str;
+                portENTER_CRITICAL(&doorModeMux);
+                if (door_mode == ALWAYS_OPEN) mode_str = "ALWAYS_OPEN";
+                else if (door_mode == ALWAYS_CLOSED) mode_str = "ALWAYS_CLOSED";
+                else mode_str = "AUTO";
+                portEXIT_CRITICAL(&doorModeMux);
+                client->text("door_mode:" + mode_str);
+                Serial.printf("[%s] Inviato stato modalità al client ID %u: %s\n", time_str, client->id(), mode_str.c_str());
             } else if (message == "get_log") {
-                Serial.printf("[%s] Invio log al client...\n", time_str);
+                Serial.printf("[%s] Invio log al client ID %u\n", time_str, client->id());
                 DynamicJsonDocument doc(8192);
                 JsonArray log_array = doc.createNestedArray("log");
                 for (size_t i = 0; i < LOG_BUFFER_SIZE; i++) {
@@ -165,7 +165,7 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
                 String json;
                 serializeJson(doc, json);
                 client->text(json);
-                Serial.printf("[%s] Log inviato al client\n", time_str);
+                Serial.printf("[%s] Log inviato al client ID %u\n", time_str, client->id());
             } else if (message.startsWith("set_door_mode:")) {
                 String mode = message.substring(14);
                 Serial.printf("[%s] Richiesta impostazione modalità: %s\n", time_str, mode.c_str());
