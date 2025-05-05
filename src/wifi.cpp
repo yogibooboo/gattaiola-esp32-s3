@@ -1,4 +1,5 @@
 #include "common.h"
+#include <ElegantOTA.h>
 
 void wifi_task(void *pvParameters) {
     bool server_started = false;
@@ -35,6 +36,8 @@ void wifi_task(void *pvParameters) {
                 tzset();
 
                 if (!server_started) {
+                    ElegantOTA.begin(&server);
+                    Serial.println("Server WebSocket e OTA avviato. Visita http://<IP>/update per OTA.");
                     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
                         request->send(SPIFFS, "/index.html", "text/html");
                     });

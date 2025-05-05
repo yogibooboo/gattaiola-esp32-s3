@@ -241,7 +241,16 @@ void print_task(void *pvParameters) {
 void setup() {
     Serial.begin(115200);
     delay(1000);
-    Serial.println("Avvio ESP32-S3");
+    Serial.println("DEBUG: Avvio ESP32-S3 OTA");
+    Serial.printf("Flash Size: %u bytes\n", ESP.getFlashChipSize());
+    esp_partition_iterator_t it = esp_partition_find(ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY, NULL);
+    while (it != NULL) {
+        const esp_partition_t *part = esp_partition_get(it);
+        Serial.printf("Partizione: %s, Offset: 0x%X, Dimensione: %u bytes\n",
+                      part->label, part->address, part->size);
+        it = esp_partition_next(it);
+    }
+    esp_partition_iterator_release(it);
 
     if (!SPIFFS.begin(true)) {
         Serial.println("Errore: inizializzazione SPIFFS fallita");
