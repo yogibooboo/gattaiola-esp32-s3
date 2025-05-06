@@ -87,7 +87,7 @@ bool readConfig() {
         return false;
     }
 
-    DynamicJsonDocument doc(2048);
+    DynamicJsonDocument doc(8192);
     DeserializationError error = deserializeJson(doc, file);
     file.close();
 
@@ -96,45 +96,50 @@ bool readConfig() {
         return false;
     }
 
-    DOOR_TIMEOUT = doc["door_timeout"] | 10000 / portTICK_PERIOD_MS;
-    STEPS_PER_MOVEMENT = doc["steps_per_movement"] | 2500;
-    STEP_INTERVAL_US = doc["step_interval_us"] | 500;
+    num_cats = 0;
+    JsonArray cats = doc["authorized_cats"];
+    for (JsonObject cat : cats) {
+        if (num_cats >= MAX_CATS) break;
+        String device_code_str = cat["device_code"];
+        uint64_t device_code;
+        if (!sscanf(device_code_str.c_str(), "%llu", &device_code)) {
+            Serial.printf("Errore: device_code %s non valido\n", device_code_str.c_str());
+            continue;
+        }
+        uint16_t country_code = cat["country_code"] | 0;
+        String name = cat["name"].as<String>();
+        bool authorized = cat["authorized"] | true;
+
+        if (device_code >= (1ULL << 38)) {
+            Serial.printf("Errore: device_code %llu troppo grande\n", (unsigned long long)device_code);
+            continue;
+        }
+        if (country_code >= (1U << 10)) {
+            Serial.printf("Errore: country_code %u troppo grande\n", country_code);
+            continue;
+        }
+        if (name.length() > 32) {
+            name = name.substring(0, 32);
+        }
+
+        authorized_cats[num_cats] = {device_code, country_code, name, authorized};
+        num_cats++;
+    }
+
+    DOOR_TIMEOUT = doc["door_timeout"] | (10000 / portTICK_PERIOD_MS);
     WIFI_RECONNECT_DELAY = doc["wifi_reconnect_delay"] | 1000;
     UNAUTHORIZED_LOG_INTERVAL = doc["unauthorized_log_interval"] | 60000;
+    STEPS_PER_MOVEMENT = doc["steps_per_movement"] | 2500;
+    STEP_INTERVAL_US = doc["step_interval_us"] | 500;
     WIFI_VERBOSE_LOG = doc["wifi_verbose_log"] | false;
+    contaporta = doc["contaporta"] | 0;
 
-    // Leggo door_mode
     String mode = doc["door_mode"] | "AUTO";
     portENTER_CRITICAL(&doorModeMux);
     if (mode == "ALWAYS_OPEN") door_mode = ALWAYS_OPEN;
     else if (mode == "ALWAYS_CLOSED") door_mode = ALWAYS_CLOSED;
     else door_mode = AUTO;
     portEXIT_CRITICAL(&doorModeMux);
-
-    JsonArray cats = doc["authorized_cats"];
-    num_cats = min(cats.size(), (size_t)MAX_CATS);
-    for (size_t i = 0; i < num_cats; i++) {
-        uint64_t device_code = cats[i]["device_code"] | 0ULL;
-        uint16_t country_code = cats[i]["country_code"] | 0;
-        bool authorized = cats[i]["authorized"] | true;
-
-        if (device_code >= (1ULL << 38)) {
-            Serial.printf("Errore: device_code %llu troppo grande\n", (unsigned long long)device_code);
-            device_code = 0;
-        }
-        if (country_code >= (1U << 10)) {
-            Serial.printf("Errore: country_code %u troppo grande\n", country_code);
-            country_code = 0;
-        }
-
-        authorized_cats[i].device_code = device_code;
-        authorized_cats[i].country_code = country_code;
-        authorized_cats[i].name = cats[i]["name"].as<String>();
-        authorized_cats[i].authorized = authorized;
-        if (authorized_cats[i].name.length() > 32) {
-            authorized_cats[i].name = authorized_cats[i].name.substring(0, 32);
-        }
-    }
 
     Serial.println("Configurazione letta con successo");
     return true;
@@ -148,15 +153,15 @@ void writeDefaultConfig() {
         return;
     }
 
-    DynamicJsonDocument doc(2048);
+    DynamicJsonDocument doc(8192);
     doc["door_timeout"] = 10000 / portTICK_PERIOD_MS;
-    doc["steps_per_movement"] = 2500;
-    doc["step_interval_us"] = 500;
     doc["wifi_reconnect_delay"] = 1000;
     doc["unauthorized_log_interval"] = 60000;
+    doc["steps_per_movement"] = 2500;
+    doc["step_interval_us"] = 500;
     doc["wifi_verbose_log"] = false;
+    doc["contaporta"] = 0;
     doc["door_mode"] = "AUTO";
-
     JsonArray cats = doc.createNestedArray("authorized_cats");
 
     if (serializeJson(doc, file)) {
@@ -175,29 +180,27 @@ void saveConfig() {
         return;
     }
 
-    DynamicJsonDocument doc(2048);
+    DynamicJsonDocument doc(8192);
+    JsonArray cats = doc.createNestedArray("authorized_cats");
+    for (size_t i = 0; i < num_cats; i++) {
+        JsonObject cat = cats.createNestedObject();
+        cat["device_code"] = String((unsigned long long)authorized_cats[i].device_code);
+        cat["country_code"] = authorized_cats[i].country_code;
+        cat["name"] = authorized_cats[i].name;
+        cat["authorized"] = authorized_cats[i].authorized;
+    }
     doc["door_timeout"] = DOOR_TIMEOUT;
-    doc["steps_per_movement"] = STEPS_PER_MOVEMENT;
-    doc["step_interval_us"] = STEP_INTERVAL_US;
     doc["wifi_reconnect_delay"] = WIFI_RECONNECT_DELAY;
     doc["unauthorized_log_interval"] = UNAUTHORIZED_LOG_INTERVAL;
+    doc["steps_per_movement"] = STEPS_PER_MOVEMENT;
+    doc["step_interval_us"] = STEP_INTERVAL_US;
     doc["wifi_verbose_log"] = WIFI_VERBOSE_LOG;
-
-    // Salvo door_mode
+    doc["contaporta"] = contaporta;
     portENTER_CRITICAL(&doorModeMux);
     if (door_mode == ALWAYS_OPEN) doc["door_mode"] = "ALWAYS_OPEN";
     else if (door_mode == ALWAYS_CLOSED) doc["door_mode"] = "ALWAYS_CLOSED";
     else doc["door_mode"] = "AUTO";
     portEXIT_CRITICAL(&doorModeMux);
-
-    JsonArray cats = doc.createNestedArray("authorized_cats");
-    for (size_t i = 0; i < num_cats; i++) {
-        JsonObject cat = cats.createNestedObject();
-        cat["device_code"] = authorized_cats[i].device_code;
-        cat["country_code"] = authorized_cats[i].country_code;
-        cat["name"] = authorized_cats[i].name;
-        cat["authorized"] = authorized_cats[i].authorized;
-    }
 
     if (serializeJson(doc, file)) {
         Serial.println("Configurazione aggiornata su config.json");

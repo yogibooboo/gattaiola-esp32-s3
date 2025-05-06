@@ -242,7 +242,7 @@ void door_task(void *pvParameters) {
                     door_open = false;
                     startMotor(false);
                     Serial.printf("[%s] Porta chiusa dopo timeout\n", time_str);
-                    add_log_entry(timestamp_full, "Timeout", "", 0, 0, false);
+                    // Rimosso add_log_entry per timeout
                     log_emitted = false; // Resetta per il prossimo accesso
                 }
             }

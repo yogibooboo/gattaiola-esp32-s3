@@ -41,8 +41,152 @@ void wifi_task(void *pvParameters) {
                     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
                         request->send(SPIFFS, "/index.html", "text/html");
                     });
+                    server.on("/config", HTTP_GET, [](AsyncWebServerRequest *request) {
+                        request->send(SPIFFS, "/config.html", "text/html");
+                    });
                     ws.onEvent(onWebSocketEvent);
                     server.addHandler(&ws);
+                    server.on("/config_data", HTTP_GET, [](AsyncWebServerRequest *request) {
+                        DynamicJsonDocument doc(8192);
+                        JsonArray cats = doc.createNestedArray("authorized_cats");
+                        for (size_t i = 0; i < num_cats; i++) {
+                            JsonObject cat = cats.createNestedObject();
+                            cat["device_code"] = String((unsigned long long)authorized_cats[i].device_code);
+                            cat["country_code"] = authorized_cats[i].country_code;
+                            cat["name"] = authorized_cats[i].name;
+                            cat["authorized"] = authorized_cats[i].authorized;
+                        }
+                        doc["DOOR_TIMEOUT"] = DOOR_TIMEOUT * portTICK_PERIOD_MS; // Converti in ms
+                        doc["WIFI_RECONNECT_DELAY"] = WIFI_RECONNECT_DELAY;
+                        doc["UNAUTHORIZED_LOG_INTERVAL"] = UNAUTHORIZED_LOG_INTERVAL;
+                        doc["STEPS_PER_MOVEMENT"] = STEPS_PER_MOVEMENT;
+                        doc["STEP_INTERVAL_US"] = STEP_INTERVAL_US;
+                        doc["WIFI_VERBOSE_LOG"] = WIFI_VERBOSE_LOG;
+                        doc["contaporta"] = contaporta;
+                        String json;
+                        serializeJson(doc, json);
+                        request->send(200, "application/json", json);
+                    });
+                    server.on("/config_data", HTTP_POST, [](AsyncWebServerRequest *request) {}, 
+                        nullptr, // onNotFound
+                        [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+                            static String body;
+                            if (index == 0) body = ""; // Reset body at start
+                            body += String((char*)data, len);
+                            if (index + len == total) { // All data received
+                                DynamicJsonDocument doc(8192);
+                                DeserializationError error = deserializeJson(doc, body);
+                                if (error) {
+                                    request->send(400, "application/json", "{\"success\":false,\"error\":\"JSON non valido\"}");
+                                    return;
+                                }
+                                String action = doc["action"];
+                                if (action == "add" || action == "update") {
+                                    JsonArray cats = doc["cats"];
+                                    for (JsonObject cat : cats) {
+                                        String name = cat["name"];
+                                        String device_code_str = cat["device_code"];
+                                        uint16_t country_code = cat["country_code"];
+                                        bool authorized = cat["authorized"];
+                                        if (name.isEmpty() || device_code_str.isEmpty() || !cat.containsKey("country_code")) {
+                                            request->send(400, "application/json", "{\"success\":false,\"error\":\"Dati gatto mancanti\"}");
+                                            return;
+                                        }
+                                        uint64_t device_code;
+                                        if (!sscanf(device_code_str.c_str(), "%llu", &device_code)) {
+                                            request->send(400, "application/json", "{\"success\":false,\"error\":\"Codice dispositivo non valido\"}");
+                                            return;
+                                        }
+                                        if (action == "add") {
+                                            if (num_cats >= MAX_CATS) {
+                                                request->send(400, "application/json", "{\"success\":false,\"error\":\"Limite gatti raggiunto\"}");
+                                                return;
+                                            }
+                                            authorized_cats[num_cats] = {device_code, country_code, name, authorized};
+                                            num_cats++;
+                                        } else if (action == "update") {
+                                            String original_device_code = cat["original_device_code"];
+                                            uint64_t orig_device_code;
+                                            if (!sscanf(original_device_code.c_str(), "%llu", &orig_device_code)) {
+                                                request->send(400, "application/json", "{\"success\":false,\"error\":\"Codice dispositivo originale non valido\"}");
+                                                return;
+                                            }
+                                            for (size_t i = 0; i < num_cats; i++) {
+                                                if (authorized_cats[i].device_code == orig_device_code) {
+                                                    authorized_cats[i] = {device_code, country_code, name, authorized};
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    saveConfig();
+                                    request->send(200, "application/json", "{\"success\":true}");
+                                } else if (action == "delete") {
+                                    JsonArray cats = doc["cats"];
+                                    for (JsonObject cat : cats) {
+                                        String device_code_str = cat["device_code"];
+                                        uint64_t device_code;
+                                        if (!sscanf(device_code_str.c_str(), "%llu", &device_code)) {
+                                            request->send(400, "application/json", "{\"success\":false,\"error\":\"Codice dispositivo non valido\"}");
+                                            return;
+                                        }
+                                        for (size_t i = 0; i < num_cats; i++) {
+                                            if (authorized_cats[i].device_code == device_code) {
+                                                for (size_t j = i; j < num_cats - 1; j++) {
+                                                    authorized_cats[j] = authorized_cats[j + 1];
+                                                }
+                                                num_cats--;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    saveConfig();
+                                    request->send(200, "application/json", "{\"success\":true}");
+                                } else if (action == "update_params" || action == "reset_contaporta" || action == "reset_defaults") {
+                                    JsonObject params = doc["params"];
+                                    if (action == "reset_defaults") {
+                                        DOOR_TIMEOUT = 10000 / portTICK_PERIOD_MS;
+                                        WIFI_RECONNECT_DELAY = 1000;
+                                        UNAUTHORIZED_LOG_INTERVAL = 60000;
+                                        STEPS_PER_MOVEMENT = 2500;
+                                        STEP_INTERVAL_US = 500;
+                                        WIFI_VERBOSE_LOG = false;
+                                        contaporta = 0;
+                                    } else {
+                                        if (params.containsKey("DOOR_TIMEOUT")) DOOR_TIMEOUT = params["DOOR_TIMEOUT"].as<uint32_t>() / portTICK_PERIOD_MS; // Converti da ms
+                                        if (params.containsKey("WIFI_RECONNECT_DELAY")) WIFI_RECONNECT_DELAY = params["WIFI_RECONNECT_DELAY"].as<uint32_t>();
+                                        if (params.containsKey("UNAUTHORIZED_LOG_INTERVAL")) UNAUTHORIZED_LOG_INTERVAL = params["UNAUTHORIZED_LOG_INTERVAL"].as<uint32_t>();
+                                        if (params.containsKey("STEPS_PER_MOVEMENT")) STEPS_PER_MOVEMENT = params["STEPS_PER_MOVEMENT"].as<uint32_t>();
+                                        if (params.containsKey("STEP_INTERVAL_US")) STEP_INTERVAL_US = params["STEP_INTERVAL_US"].as<uint32_t>();
+                                        if (params.containsKey("WIFI_VERBOSE_LOG")) WIFI_VERBOSE_LOG = params["WIFI_VERBOSE_LOG"].as<bool>();
+                                        if (params.containsKey("contaporta")) contaporta = params["contaporta"].as<uint32_t>();
+                                        if (DOOR_TIMEOUT * portTICK_PERIOD_MS < 1000 || WIFI_RECONNECT_DELAY < 1000 || UNAUTHORIZED_LOG_INTERVAL < 1000) {
+                                            request->send(400, "application/json", "{\"success\":false,\"error\":\"Tempi devono essere >= 1000 ms\"}");
+                                            return;
+                                        }
+                                        if (STEPS_PER_MOVEMENT < 1) {
+                                            request->send(400, "application/json", "{\"success\":false,\"error\":\"Passi per movimento >= 1\"}");
+                                            return;
+                                        }
+                                        if (STEP_INTERVAL_US < 100) {
+                                            request->send(400, "application/json", "{\"success\":false,\"error\":\"Intervallo passi >= 100 μs\"}");
+                                            return;
+                                        }
+                                    }
+                                    saveConfig();
+                                    request->send(200, "application/json", "{\"success\":true}");
+                                } else {
+                                    request->send(400, "application/json", "{\"success\":false,\"error\":\"Azione non valida\"}");
+                                }
+                            }
+                        });
+                    server.on("/clear_log", HTTP_POST, [](AsyncWebServerRequest *request) {
+                        log_buffer_index = 0;
+                        for (size_t i = 0; i < LOG_BUFFER_SIZE; i++) {
+                            log_buffer[i].timestamp[0] = '\0';
+                        }
+                        request->send(200, "application/json", "{\"success\":true}");
+                    });
                     server.begin();
                     server_started = true;
                     Serial.println("Server WebSocket avviato");

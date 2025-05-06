@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configurazione Gattaiola</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        h1, h2 {
+            text-align: center;
+            color: #2c3e50;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .section {
+            margin-bottom: 20px;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .cats-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        .cats-table th, .cats-table td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        .cats-table th {
+            background-color: #2c3e50;
+            color: #fff;
+        }
+        .cats-table tr:hover {
+            background-color: #f9f9f9;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: inline-block;
+            width: 200px;
+            font-weight: bold;
+        }
+        input[type="text"], input[type="number"], input[type="checkbox"] {
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            width: 200px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #2c3e50;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #34495e;
+        }
+        #feedback {
+            margin-top: 10px;
+            color: #2c3e50;
+            font-weight: bold;
+        }
+        @media (max-width: 600px) {
+            .cats-table, input[type="text"], input[type="number"] {
+                font-size: 14px;
+            }
+            label, input {
+                width: 100%;
+                box-sizing: border-box;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Configurazione Gattaiola</h1>
+        
+        <div class="section">
+            <h2>Gestione Gatti Autorizzati</h2>
+            <div class="form-group">
+                <label for="catName">Nome:</label>
+                <input type="text" id="catName" placeholder="Nome del gatto">
+            </div>
+            <div class="form-group">
+                <label for="catDeviceCode">Codice Dispositivo:</label>
+                <input type="text" id="catDeviceCode" placeholder="es. 123456789">
+            </div>
+            <div class="form-group">
+                <label for="catCountryCode">Codice Paese:</label>
+                <input type="number" id="catCountryCode" placeholder="es. 39">
+            </div>
+            <div class="form-group">
+                <label for="catAuthorized">Autorizzato:</label>
+                <input type="checkbox" id="catAuthorized">
+            </div>
+            <button onclick="addCat()">Aggiungi Gatto</button>
+            <table class="cats-table">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>Codice Dispositivo</th>
+                        <th>Codice Paese</th>
+                        <th>Autorizzato</th>
+                        <th>Azioni</th>
+                    </tr>
+                </thead>
+                <tbody id="catsTableBody"></tbody>
+            </table>
+        </div>
+        
+        <div class="section">
+            <h2>Altri Parametri</h2>
+            <div class="form-group">
+                <label for="doorTimeout">Timeout Porta (ms):</label>
+                <input type="number" id="doorTimeout" min="1000">
+            </div>
+            <div class="form-group">
+                <label for="wifiReconnectDelay">Ritardo Riconnessione Wi-Fi (ms):</label>
+                <input type="number" id="wifiReconnectDelay" min="1000">
+            </div>
+            <div class="form-group">
+                <label for="unauthorizedLogInterval">Intervallo Log Non Autorizzati (ms):</label>
+                <input type="number" id="unauthorizedLogInterval" min="1000">
+            </div>
+            <div class="form-group">
+                <label for="stepsPerMovement">Passi per Movimento:</label>
+                <input type="number" id="stepsPerMovement" min="1">
+            </div>
+            <div class="form-group">
+                <label for="stepIntervalUs">Intervallo Passi (μs):</label>
+                <input type="number" id="stepIntervalUs" min="100">
+            </div>
+            <div class="form-group">
+                <label for="wifiVerboseLog">Log Wi-Fi Dettagliato:</label>
+                <input type="checkbox" id="wifiVerboseLog">
+            </div>
+            <div class="form-group">
+                <label for="contaporta">Contatore Porte:</label>
+                <input type="number" id="contaporta" readonly>
+                <button onclick="resetContaporta()">Resetta</button>
+            </div>
+            <button onclick="saveConfig()">Salva</button>
+            <button onclick="clearLog()">Cancella Log</button>
+            <button onclick="resetDefaults()">Ripristina Default</button>
+            <div id="feedback"></div>
+        </div>
+    </div>
+    
+    <script>
+        let editingCat = null;
+
+        async function loadConfig() {
+            try {
+                const response = await fetch('/config_data');
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const data = await response.json();
+                populateCatsTable(data.authorized_cats);
+                document.getElementById('doorTimeout').value = data.DOOR_TIMEOUT;
+                document.getElementById('wifiReconnectDelay').value = data.WIFI_RECONNECT_DELAY;
+                document.getElementById('unauthorizedLogInterval').value = data.UNAUTHORIZED_LOG_INTERVAL;
+                document.getElementById('stepsPerMovement').value = data.STEPS_PER_MOVEMENT;
+                document.getElementById('stepIntervalUs').value = data.STEP_INTERVAL_US;
+                document.getElementById('wifiVerboseLog').checked = data.WIFI_VERBOSE_LOG;
+                document.getElementById('contaporta').value = data.contaporta;
+                showFeedback("Configurazione caricata");
+            } catch (error) {
+                showFeedback("Errore caricamento configurazione: " + error.message);
+            }
+        }
+
+        function populateCatsTable(cats) {
+            const tbody = document.getElementById('catsTableBody');
+            tbody.innerHTML = '';
+            cats.forEach(cat => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${cat.name}</td>
+                    <td>${cat.device_code}</td>
+                    <td>${cat.country_code}</td>
+                    <td>${cat.authorized ? 'Sì' : 'No'}</td>
+                    <td>
+                        <button onclick="editCat('${cat.device_code}')">Modifica</button>
+                        <button onclick="deleteCat('${cat.device_code}')">Elimina</button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        async function addCat() {
+            const name = document.getElementById('catName').value.trim();
+            const deviceCode = document.getElementById('catDeviceCode').value.trim();
+            const countryCode = parseInt(document.getElementById('catCountryCode').value);
+            const authorized = document.getElementById('catAuthorized').checked;
+
+            if (!name || !deviceCode || isNaN(countryCode)) {
+                showFeedback("Errore: tutti i campi sono obbligatori");
+                return;
+            }
+            if (!/^\d+$/.test(deviceCode)) {
+                showFeedback("Errore: codice dispositivo deve essere numerico");
+                return;
+            }
+
+            const cat = { name, device_code: deviceCode, country_code: countryCode, authorized };
+            if (editingCat) {
+                cat.original_device_code = editingCat;
+            }
+
+            try {
+                const response = await fetch('/config_data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cats: [cat], action: editingCat ? 'update' : 'add' })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    await loadConfig();
+                    showFeedback(editingCat ? "Gatto modificato" : "Gatto aggiunto");
+                    if (editingCat) {
+                        editingCat = null;
+                        document.getElementById('catName').value = '';
+                        document.getElementById('catDeviceCode').value = '';
+                        document.getElementById('catCountryCode').value = '';
+                        document.getElementById('catAuthorized').checked = false;
+                    }
+                } else {
+                    showFeedback("Errore: " + data.error);
+                }
+            } catch (error) {
+                showFeedback("Errore invio dati: " + error.message);
+            }
+        }
+
+        async function editCat(deviceCode) {
+            try {
+                const response = await fetch('/config_data');
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const data = await response.json();
+                const cat = data.authorized_cats.find(c => c.device_code === deviceCode);
+                if (cat) {
+                    document.getElementById('catName').value = cat.name;
+                    document.getElementById('catDeviceCode').value = cat.device_code;
+                    document.getElementById('catCountryCode').value = cat.country_code;
+                    document.getElementById('catAuthorized').checked = cat.authorized;
+                    editingCat = deviceCode;
+                    showFeedback("Modifica il gatto e clicca Aggiungi per salvare");
+                }
+            } catch (error) {
+                showFeedback("Errore caricamento gatto: " + error.message);
+            }
+        }
+
+        async function deleteCat(deviceCode) {
+            if (!confirm("Eliminare il gatto?")) return;
+            try {
+                const response = await fetch('/config_data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cats: [{ device_code: deviceCode }], action: 'delete' })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    await loadConfig();
+                    showFeedback("Gatto eliminato");
+                } else {
+                    showFeedback("Errore: " + data.error);
+                }
+            } catch (error) {
+                showFeedback("Errore eliminazione: " + error.message);
+            }
+        }
+
+        async function saveConfig() {
+            const config = {
+                DOOR_TIMEOUT: parseInt(document.getElementById('doorTimeout').value),
+                WIFI_RECONNECT_DELAY: parseInt(document.getElementById('wifiReconnectDelay').value),
+                UNAUTHORIZED_LOG_INTERVAL: parseInt(document.getElementById('unauthorizedLogInterval').value),
+                STEPS_PER_MOVEMENT: parseInt(document.getElementById('stepsPerMovement').value),
+                STEP_INTERVAL_US: parseInt(document.getElementById('stepIntervalUs').value),
+                WIFI_VERBOSE_LOG: document.getElementById('wifiVerboseLog').checked,
+                contaporta: parseInt(document.getElementById('contaporta').value)
+            };
+
+            if (Object.values(config).some(v => isNaN(v) && typeof v !== 'boolean')) {
+                showFeedback("Errore: tutti i campi numerici sono obbligatori");
+                return;
+            }
+            if (config.DOOR_TIMEOUT < 1000 || config.WIFI_RECONNECT_DELAY < 1000 || config.UNAUTHORIZED_LOG_INTERVAL < 1000) {
+                showFeedback("Errore: i tempi devono essere >= 1000 ms");
+                return;
+            }
+            if (config.STEPS_PER_MOVEMENT < 1) {
+                showFeedback("Errore: passi per movimento deve essere >= 1");
+                return;
+            }
+            if (config.STEP_INTERVAL_US < 100) {
+                showFeedback("Errore: intervallo passi deve essere >= 100 μs");
+                return;
+            }
+
+            try {
+                const response = await fetch('/config_data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ params: config, action: 'update_params' })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    await loadConfig();
+                    showFeedback("Configurazione salvata");
+                } else {
+                    showFeedback("Errore: " + data.error);
+                }
+            } catch (error) {
+                showFeedback("Errore salvataggio: " + error.message);
+            }
+        }
+
+        async function resetContaporta() {
+            try {
+                const response = await fetch('/config_data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ params: { contaporta: 0 }, action: 'reset_contaporta' })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    await loadConfig();
+                    showFeedback("Contatore porte resettato");
+                } else {
+                    showFeedback("Errore: " + data.error);
+                }
+            } catch (error) {
+                showFeedback("Errore reset contatore: " + error.message);
+            }
+        }
+
+        async function clearLog() {
+            if (!confirm("Cancellare tutti i log?")) return;
+            try {
+                const response = await fetch('/clear_log', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                const data = await response.json();
+                if (data.success) {
+                    showFeedback("Log cancellato");
+                } else {
+                    showFeedback("Errore: " + data.error);
+                }
+            } catch (error) {
+                showFeedback("Errore cancellazione log: " + error.message);
+            }
+        }
+
+        async function resetDefaults() {
+            if (!confirm("Ripristinare i parametri ai valori predefiniti?")) return;
+            try {
+                const response = await fetch('/config_data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'reset_defaults' })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    await loadConfig();
+                    showFeedback("Parametri ripristinati ai valori predefiniti");
+                } else {
+                    showFeedback("Errore: " + data.error);
+                }
+            } catch (error) {
+                showFeedback("Errore ripristino default: " + error.message);
+            }
+        }
+
+        function showFeedback(message) {
+            const feedback = document.getElementById('feedback');
+            feedback.textContent = message;
+            setTimeout(() => feedback.textContent = '', 5000);
+        }
+
+        window.onload = loadConfig;
+    </script>
+</body>
+</html>
