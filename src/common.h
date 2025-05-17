@@ -7,7 +7,7 @@
 #include <SPIFFS.h>
 #include <ArduinoJson.h>
 #include <time.h>
-#include "core1.h" // Aggiunto per ADC_BUFFER_SIZE e altre definizioni
+#include "core1.h"
 
 // Strutture dati
 #define MAX_CATS 20
@@ -20,25 +20,28 @@ struct Cat {
 
 #define LOG_BUFFER_SIZE 100
 struct LogEntry {
-    char timestamp[20]; // "DD/MM/YYYY HH:MM:SS"
-    String type;        // Tradotto in italiano
-    String name;        // Nome gatto (se applicabile)
-    uint16_t country_code; // Per sconosciuti
-    uint64_t device_code;  // Per sconosciuti
+    char timestamp[20];
+    String type;
+    String name;
+    uint16_t country_code;
+    uint64_t device_code;
     bool authorized;
 };
 
 // Enum per door_mode
 enum DoorMode { AUTO, ALWAYS_OPEN, ALWAYS_CLOSED };
 
+// Enum per motor_type
+enum MotorType { STEP, SERVO };
+
 // Costanti per i pin
 #define PWM_PIN 14
 #define PWM_FREQ 134200
 #define pblue 2
 #define expblue 39
-#define ledverde 20   // LED contemporaneo ad apertura porta
-#define detected 15   // LED istantaneo presenza RFID
-#define wifi_led 6    // LED per stato Wi-Fi (logica invertita)
+#define ledverde 20
+#define detected 15
+#define wifi_led 6
 #define STEP_A_PLUS 10
 #define STEP_A_MINUS 16
 #define STEP_B_PLUS 12
@@ -47,6 +50,11 @@ enum DoorMode { AUTO, ALWAYS_OPEN, ALWAYS_CLOSED };
 
 // Costanti per ADC
 #define ADC_CHANNEL 0
+
+// Costanti per servomotore
+#define SERVO_PWM_FREQ 50
+#define SERVO_PWM_CHANNEL LEDC_CHANNEL_0 // Canale LEDC per PWM del servomotore
+#define SERVO_PWM_RESOLUTION 14 // Risoluzione massima 14 bit per 50 Hz su ESP32-S3
 
 // Variabili globali definite in main.cpp
 extern const char *ssid;
@@ -86,6 +94,10 @@ extern volatile uint16_t adc_buffer[ADC_BUFFER_SIZE];
 extern uint32_t STEPS_PER_MOVEMENT;
 extern uint32_t STEP_INTERVAL_US;
 extern const uint8_t stepSequence[4][4];
+extern volatile MotorType motor_type;
+extern uint32_t servo_open_us;
+extern uint32_t servo_closed_us;
+extern uint32_t servo_transition_ms;
 
 // Funzioni definite in wifi.cpp
 void wifi_task(void *pvParameters);
@@ -94,6 +106,7 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
 // Funzioni definite in door.cpp
 void onStepTimer();
 void startMotor(bool direction);
+void setServoPosition(bool open);
 void add_log_entry(const char* timestamp, const char* type, const String& name, uint16_t country_code, uint64_t device_code, bool authorized);
 void door_task(void *pvParameters);
 

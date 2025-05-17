@@ -10,7 +10,7 @@ void wifi_task(void *pvParameters) {
         if (WiFi.status() != WL_CONNECTED) {
             portENTER_CRITICAL(&wifiMux);
             wifi_connected = false;
-            digitalWrite(wifi_led, HIGH); // LED spento
+            digitalWrite(wifi_led, HIGH);
             portEXIT_CRITICAL(&wifiMux);
 
             if (WIFI_VERBOSE_LOG) {
@@ -26,7 +26,7 @@ void wifi_task(void *pvParameters) {
             if (WiFi.status() == WL_CONNECTED) {
                 portENTER_CRITICAL(&wifiMux);
                 wifi_connected = true;
-                digitalWrite(wifi_led, LOW); // LED acceso
+                digitalWrite(wifi_led, LOW);
                 portEXIT_CRITICAL(&wifiMux);
 
                 Serial.printf("Wi-Fi: Connesso, IP: %s\n", WiFi.localIP().toString().c_str());
@@ -56,24 +56,28 @@ void wifi_task(void *pvParameters) {
                             cat["name"] = authorized_cats[i].name;
                             cat["authorized"] = authorized_cats[i].authorized;
                         }
-                        doc["DOOR_TIMEOUT"] = DOOR_TIMEOUT * portTICK_PERIOD_MS; // Converti in ms
+                        doc["DOOR_TIMEOUT"] = DOOR_TIMEOUT * portTICK_PERIOD_MS;
                         doc["WIFI_RECONNECT_DELAY"] = WIFI_RECONNECT_DELAY;
                         doc["UNAUTHORIZED_LOG_INTERVAL"] = UNAUTHORIZED_LOG_INTERVAL;
                         doc["STEPS_PER_MOVEMENT"] = STEPS_PER_MOVEMENT;
                         doc["STEP_INTERVAL_US"] = STEP_INTERVAL_US;
                         doc["WIFI_VERBOSE_LOG"] = WIFI_VERBOSE_LOG;
                         doc["contaporta"] = contaporta;
+                        doc["motor_type"] = (motor_type == SERVO) ? "servo" : "step";
+                        doc["servo_open_us"] = servo_open_us;
+                        doc["servo_closed_us"] = servo_closed_us;
+                        doc["servo_transition_ms"] = servo_transition_ms;
                         String json;
                         serializeJson(doc, json);
                         request->send(200, "application/json", json);
                     });
                     server.on("/config_data", HTTP_POST, [](AsyncWebServerRequest *request) {}, 
-                        nullptr, // onNotFound
+                        nullptr,
                         [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
                             static String body;
-                            if (index == 0) body = ""; // Reset body at start
+                            if (index == 0) body = "";
                             body += String((char*)data, len);
-                            if (index + len == total) { // All data received
+                            if (index + len == total) {
                                 DynamicJsonDocument doc(8192);
                                 DeserializationError error = deserializeJson(doc, body);
                                 if (error) {
@@ -104,7 +108,7 @@ void wifi_task(void *pvParameters) {
                                             }
                                             authorized_cats[num_cats] = {device_code, country_code, name, authorized};
                                             num_cats++;
-                                        } else if (action == "update") {
+                                        } else {
                                             String original_device_code = cat["original_device_code"];
                                             uint64_t orig_device_code;
                                             if (!sscanf(original_device_code.c_str(), "%llu", &orig_device_code)) {
@@ -152,14 +156,25 @@ void wifi_task(void *pvParameters) {
                                         STEP_INTERVAL_US = 500;
                                         WIFI_VERBOSE_LOG = false;
                                         contaporta = 0;
+                                        motor_type = STEP;
+                                        servo_open_us = 2000;
+                                        servo_closed_us = 1000;
+                                        servo_transition_ms = 500;
                                     } else {
-                                        if (params.containsKey("DOOR_TIMEOUT")) DOOR_TIMEOUT = params["DOOR_TIMEOUT"].as<uint32_t>() / portTICK_PERIOD_MS; // Converti da ms
+                                        if (params.containsKey("DOOR_TIMEOUT")) DOOR_TIMEOUT = params["DOOR_TIMEOUT"].as<uint32_t>() / portTICK_PERIOD_MS;
                                         if (params.containsKey("WIFI_RECONNECT_DELAY")) WIFI_RECONNECT_DELAY = params["WIFI_RECONNECT_DELAY"].as<uint32_t>();
                                         if (params.containsKey("UNAUTHORIZED_LOG_INTERVAL")) UNAUTHORIZED_LOG_INTERVAL = params["UNAUTHORIZED_LOG_INTERVAL"].as<uint32_t>();
                                         if (params.containsKey("STEPS_PER_MOVEMENT")) STEPS_PER_MOVEMENT = params["STEPS_PER_MOVEMENT"].as<uint32_t>();
                                         if (params.containsKey("STEP_INTERVAL_US")) STEP_INTERVAL_US = params["STEP_INTERVAL_US"].as<uint32_t>();
                                         if (params.containsKey("WIFI_VERBOSE_LOG")) WIFI_VERBOSE_LOG = params["WIFI_VERBOSE_LOG"].as<bool>();
                                         if (params.containsKey("contaporta")) contaporta = params["contaporta"].as<uint32_t>();
+                                        if (params.containsKey("motor_type")) {
+                                            String mt = params["motor_type"].as<String>();
+                                            motor_type = (mt == "servo") ? SERVO : STEP;
+                                        }
+                                        if (params.containsKey("servo_open_us")) servo_open_us = params["servo_open_us"].as<uint32_t>();
+                                        if (params.containsKey("servo_closed_us")) servo_closed_us = params["servo_closed_us"].as<uint32_t>();
+                                        if (params.containsKey("servo_transition_ms")) servo_transition_ms = params["servo_transition_ms"].as<uint32_t>();
                                         if (DOOR_TIMEOUT * portTICK_PERIOD_MS < 1000 || WIFI_RECONNECT_DELAY < 1000 || UNAUTHORIZED_LOG_INTERVAL < 1000) {
                                             request->send(400, "application/json", "{\"success\":false,\"error\":\"Tempi devono essere >= 1000 ms\"}");
                                             return;
@@ -186,6 +201,11 @@ void wifi_task(void *pvParameters) {
                             log_buffer[i].timestamp[0] = '\0';
                         }
                         request->send(200, "application/json", "{\"success\":true}");
+                    });
+                    server.on("/reset_system", HTTP_POST, [](AsyncWebServerRequest *request) {
+                        request->send(200, "application/json", "{\"success\":true}");
+                        vTaskDelay(100 / portTICK_PERIOD_MS); // Breve ritardo per inviare la risposta
+                        ESP.restart();
                     });
                     server.begin();
                     server_started = true;
@@ -239,12 +259,11 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
 
     if (type == WS_EVT_CONNECT) {
         Serial.printf("[%s] Client WebSocket connesso, ID: %u\n", time_str, client->id());
-        // Invio del log all'apertura, con ordine più recente in cima
         DynamicJsonDocument doc(8192);
         JsonArray log_array = doc.createNestedArray("log");
         for (size_t i = 0; i < LOG_BUFFER_SIZE; i++) {
             size_t idx = (log_buffer_index - 1 - i + LOG_BUFFER_SIZE) % LOG_BUFFER_SIZE;
-            if (log_buffer[idx].timestamp[0] == '\0') continue; // Entry vuota
+            if (log_buffer[idx].timestamp[0] == '\0') continue;
             JsonObject entry = log_array.createNestedObject();
             entry["timestamp"] = log_buffer[idx].timestamp;
             entry["type"] = log_buffer[idx].type;
@@ -297,7 +316,7 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
                 JsonArray log_array = doc.createNestedArray("log");
                 for (size_t i = 0; i < LOG_BUFFER_SIZE; i++) {
                     size_t idx = (log_buffer_index - 1 - i + LOG_BUFFER_SIZE) % LOG_BUFFER_SIZE;
-                    if (log_buffer[idx].timestamp[0] == '\0') continue; // Entry vuota
+                    if (log_buffer[idx].timestamp[0] == '\0') continue;
                     JsonObject entry = log_array.createNestedObject();
                     entry["timestamp"] = log_buffer[idx].timestamp;
                     entry["type"] = log_buffer[idx].type;
@@ -329,7 +348,7 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
                 if (mode_changed) {
                     saveConfig();
                     Serial.printf("[%s] Modalità porta aggiornata: %s\n", time_str, mode.c_str());
-                    ws.textAll("door_mode:" + mode); // Invia a tutti i client
+                    ws.textAll("door_mode:" + mode);
                     client->text("Mode updated: " + mode);
                 } else {
                     client->text("Mode unchanged");

@@ -24,7 +24,7 @@ AsyncWebSocket ws("/ws");
 AsyncWebServer server(80);
 uint32_t DOOR_TIMEOUT = 10000 / portTICK_PERIOD_MS;
 uint32_t WIFI_RECONNECT_DELAY = 1000;
-uint32_t UNAUTHORIZED_LOG_INTERVAL = 60000; // 1 min, configurabile
+uint32_t UNAUTHORIZED_LOG_INTERVAL = 60000;
 bool WIFI_VERBOSE_LOG = false;
 Cat authorized_cats[MAX_CATS];
 size_t num_cats = 0;
@@ -46,6 +46,10 @@ uint16_t temp_buffer[10000];
 uint32_t contaporta = 0;
 uint32_t STEPS_PER_MOVEMENT = 2500;
 uint32_t STEP_INTERVAL_US = 500;
+volatile MotorType motor_type = STEP;
+uint32_t servo_open_us = 2000;
+uint32_t servo_closed_us = 1000;
+uint32_t servo_transition_ms = 500;
 
 // Configurazione RMT
 #define RMT_CHANNEL RMT_CHANNEL_0
@@ -141,6 +145,13 @@ bool readConfig() {
     else door_mode = AUTO;
     portEXIT_CRITICAL(&doorModeMux);
 
+    String motor = doc["motor_type"] | "step";
+    if (motor == "servo") motor_type = SERVO;
+    else motor_type = STEP;
+    servo_open_us = doc["servo_open_us"] | 2000;
+    servo_closed_us = doc["servo_closed_us"] | 1000;
+    servo_transition_ms = doc["servo_transition_ms"] | 500;
+
     Serial.println("Configurazione letta con successo");
     return true;
 }
@@ -162,6 +173,10 @@ void writeDefaultConfig() {
     doc["wifi_verbose_log"] = false;
     doc["contaporta"] = 0;
     doc["door_mode"] = "AUTO";
+    doc["motor_type"] = "step";
+    doc["servo_open_us"] = 2000;
+    doc["servo_closed_us"] = 1000;
+    doc["servo_transition_ms"] = 500;
     JsonArray cats = doc.createNestedArray("authorized_cats");
 
     if (serializeJson(doc, file)) {
@@ -196,6 +211,10 @@ void saveConfig() {
     doc["step_interval_us"] = STEP_INTERVAL_US;
     doc["wifi_verbose_log"] = WIFI_VERBOSE_LOG;
     doc["contaporta"] = contaporta;
+    doc["motor_type"] = (motor_type == SERVO) ? "servo" : "step";
+    doc["servo_open_us"] = servo_open_us;
+    doc["servo_closed_us"] = servo_closed_us;
+    doc["servo_transition_ms"] = servo_transition_ms;
     portENTER_CRITICAL(&doorModeMux);
     if (door_mode == ALWAYS_OPEN) doc["door_mode"] = "ALWAYS_OPEN";
     else if (door_mode == ALWAYS_CLOSED) doc["door_mode"] = "ALWAYS_CLOSED";
@@ -273,7 +292,7 @@ void setup() {
     pinMode(detected, OUTPUT);
     digitalWrite(detected, HIGH);
     pinMode(wifi_led, OUTPUT);
-    digitalWrite(wifi_led, HIGH); // LED spento
+    digitalWrite(wifi_led, HIGH);
 
     xTaskCreatePinnedToCore(wifi_task, "WiFi_Task", 4096, NULL, 1, NULL, 0);
 
@@ -287,18 +306,44 @@ void setup() {
     timerAttachInterrupt(timer, &onTimer, true);
     timerAlarmWrite(timer, 298, true);
 
-    pinMode(STEP_A_PLUS, OUTPUT);
-    pinMode(STEP_A_MINUS, OUTPUT);
-    pinMode(STEP_B_PLUS, OUTPUT);
-    pinMode(STEP_B_MINUS, OUTPUT);
-    pinMode(ENABLE_PIN, OUTPUT);
-    digitalWrite(ENABLE_PIN, LOW);
+    if (motor_type == STEP) {
+        Serial.println("Configurazione Step Motor");
+        pinMode(STEP_A_PLUS, OUTPUT);
+        pinMode(STEP_A_MINUS, OUTPUT);
+        pinMode(STEP_B_PLUS, OUTPUT);
+        pinMode(STEP_B_MINUS, OUTPUT);
+        pinMode(ENABLE_PIN, OUTPUT);
+        digitalWrite(ENABLE_PIN, LOW);
 
-    stepTimer = timerBegin(1, 80, true);
-    timerAttachInterrupt(stepTimer, &onStepTimer, true);
-    timerAlarmWrite(stepTimer, STEP_INTERVAL_US, true);
-    timerAlarmEnable(stepTimer);
-    timerStop(stepTimer);
+        stepTimer = timerBegin(1, 80, true);
+        timerAttachInterrupt(stepTimer, &onStepTimer, true);
+        timerAlarmWrite(stepTimer, STEP_INTERVAL_US, true);
+        timerAlarmEnable(stepTimer);
+        timerStop(stepTimer);
+    } else {
+        Serial.println("Configurazione Servomotore");
+        pinMode(STEP_A_PLUS, OUTPUT);
+        digitalWrite(STEP_A_PLUS, LOW); // GND
+        pinMode(STEP_A_MINUS, OUTPUT);
+        digitalWrite(STEP_A_MINUS, HIGH); // VCC
+        pinMode(STEP_B_PLUS, OUTPUT);
+        pinMode(STEP_B_MINUS, OUTPUT);
+        digitalWrite(STEP_B_MINUS, LOW); // Inutilizzato
+        pinMode(ENABLE_PIN, OUTPUT);
+        digitalWrite(ENABLE_PIN, HIGH); // Abilita buffer
+
+        Serial.printf("Inizializzazione LEDC: canale=%d, freq=%d Hz, risoluzione=%d bit\n", 
+                      SERVO_PWM_CHANNEL, SERVO_PWM_FREQ, SERVO_PWM_RESOLUTION);
+        if (ledcSetup(SERVO_PWM_CHANNEL, SERVO_PWM_FREQ, SERVO_PWM_RESOLUTION) == 0) {
+            Serial.println("ERRORE: ledcSetup fallito");
+        } else {
+            Serial.println("ledcSetup completato con successo");
+        }
+        ledcAttachPin(STEP_B_PLUS, SERVO_PWM_CHANNEL);
+        uint32_t duty = (servo_closed_us * (1ULL << SERVO_PWM_RESOLUTION)) / 20000;
+        Serial.printf("Impostazione PWM iniziale: servo_closed_us=%u us, duty=%u\n", servo_closed_us, duty);
+        ledcWrite(SERVO_PWM_CHANNEL, duty); // Inizializza in posizione chiusa
+    }
 
     start_rfid_task();
     xTaskCreatePinnedToCore(door_task, "Door_Task", 4096, NULL, 2, NULL, 0);

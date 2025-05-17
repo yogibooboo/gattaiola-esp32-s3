@@ -1,4 +1,5 @@
 #include "common.h"
+#include <driver/ledc.h>
 
 // ISR per il controllo delle fasi
 void IRAM_ATTR onStepTimer() {
@@ -43,6 +44,34 @@ void startMotor(bool direction) {
     portEXIT_CRITICAL(&stepTimerMux);
 }
 
+// Funzione per controllare il servomotore
+void setServoPosition(bool open) {
+    static uint32_t current_servo_us = 0; // Tiene traccia della posizione corrente
+    if (current_servo_us == 0) current_servo_us = servo_closed_us; // Inizializza a chiuso
+
+    uint32_t target_us = open ? servo_open_us : servo_closed_us;
+    int32_t delta_us = (int32_t)target_us - (int32_t)current_servo_us;
+    if (delta_us == 0) {
+        return;
+    }
+
+    uint32_t steps = servo_transition_ms / 10; // Aggiornamenti ogni 10 ms
+    if (steps == 0) steps = 1;
+
+    for (uint32_t i = 0; i < steps; i++) {
+        int32_t progress = (int32_t)(i + 1) * delta_us;
+        uint32_t new_us = current_servo_us + (progress / (int32_t)steps);
+        uint32_t duty = (new_us * (1ULL << SERVO_PWM_RESOLUTION)) / 20000;
+        ledcWrite(SERVO_PWM_CHANNEL, duty);
+        vTaskDelay(10 / portTICK_PERIOD_MS);
+    }
+
+    // Imposta esattamente il valore finale
+    uint32_t duty = (target_us * (1ULL << SERVO_PWM_RESOLUTION)) / 20000;
+    ledcWrite(SERVO_PWM_CHANNEL, duty);
+    current_servo_us = target_us; // Aggiorna la posizione corrente
+}
+
 // Funzione per aggiungere un log al buffer circolare
 void add_log_entry(const char* timestamp, const char* type, const String& name, uint16_t country_code, uint64_t device_code, bool authorized) {
     LogEntry& entry = log_buffer[log_buffer_index];
@@ -60,13 +89,12 @@ void add_log_entry(const char* timestamp, const char* type, const String& name, 
                       timestamp, type, name.c_str(), country_code, (unsigned long long)device_code, authorized ? "Sì" : "No");
     }
 
-    // Invia il log aggiornato a tutti i client WebSocket
     if (wifi_connected) {
         DynamicJsonDocument doc(8192);
         JsonArray log_array = doc.createNestedArray("log");
         for (size_t i = 0; i < LOG_BUFFER_SIZE; i++) {
             size_t idx = (log_buffer_index - 1 - i + LOG_BUFFER_SIZE) % LOG_BUFFER_SIZE;
-            if (log_buffer[idx].timestamp[0] == '\0') continue; // Entry vuota
+            if (log_buffer[idx].timestamp[0] == '\0') continue;
             JsonObject entry = log_array.createNestedObject();
             entry["timestamp"] = log_buffer[idx].timestamp;
             entry["type"] = log_buffer[idx].type;
@@ -89,9 +117,8 @@ void door_task(void *pvParameters) {
     char time_str[20];
     bool log_emitted = false;
     unsigned long last_unauthorized_log = 0;
-    DoorMode last_mode = AUTO; // Aggiunto per tracciare l'ultima modalità
+    DoorMode last_mode = AUTO;
 
-    // Stato iniziale basato su door_mode
     portENTER_CRITICAL(&doorModeMux);
     DoorMode initial_mode = door_mode;
     portEXIT_CRITICAL(&doorModeMux);
@@ -99,7 +126,8 @@ void door_task(void *pvParameters) {
     if (initial_mode == ALWAYS_OPEN && !door_open) {
         digitalWrite(ledverde, LOW);
         door_open = true;
-        startMotor(true);
+        if (motor_type == STEP) startMotor(true);
+        else setServoPosition(true);
         time_t now = local_time + (millis() - last_millis) / 1000;
         char timestamp_full[20];
         strftime(timestamp_full, sizeof(timestamp_full), "%d/%m/%Y %H:%M:%S", localtime(&now));
@@ -108,7 +136,8 @@ void door_task(void *pvParameters) {
     } else if (initial_mode == ALWAYS_CLOSED && door_open) {
         digitalWrite(ledverde, HIGH);
         door_open = false;
-        startMotor(false);
+        if (motor_type == STEP) startMotor(false);
+        else setServoPosition(false);
         time_t now = local_time + (millis() - last_millis) / 1000;
         char timestamp_full[20];
         strftime(timestamp_full, sizeof(timestamp_full), "%d/%m/%Y %H:%M:%S", localtime(&now));
@@ -117,14 +146,15 @@ void door_task(void *pvParameters) {
     } else if (initial_mode == AUTO && door_open) {
         digitalWrite(ledverde, HIGH);
         door_open = false;
-        startMotor(false);
+        if (motor_type == STEP) startMotor(false);
+        else setServoPosition(false);
         time_t now = local_time + (millis() - last_millis) / 1000;
         char timestamp_full[20];
         strftime(timestamp_full, sizeof(timestamp_full), "%d/%m/%Y %H:%M:%S", localtime(&now));
         add_log_entry(timestamp_full, "Modalità automatica", "Modalità Automatica", 0, 0, false);
         Serial.println("Porta chiusa per modalità AUTO");
     }
-    last_mode = initial_mode; // Inizializza l'ultima modalità
+    last_mode = initial_mode;
 
     while (true) {
         time_t now = local_time + (millis() - last_millis) / 1000;
@@ -141,7 +171,8 @@ void door_task(void *pvParameters) {
                 if (!door_open) {
                     digitalWrite(ledverde, LOW);
                     door_open = true;
-                    startMotor(true);
+                    if (motor_type == STEP) startMotor(true);
+                    else setServoPosition(true);
                     add_log_entry(timestamp_full, "Modalità sempre aperto", "Modalità Sempre Aperto", 0, 0, true);
                     Serial.println("Porta aperta per modalità ALWAYS_OPEN");
                 }
@@ -149,7 +180,8 @@ void door_task(void *pvParameters) {
                 if (door_open) {
                     digitalWrite(ledverde, HIGH);
                     door_open = false;
-                    startMotor(false);
+                    if (motor_type == STEP) startMotor(false);
+                    else setServoPosition(false);
                     add_log_entry(timestamp_full, "Modalità sempre chiuso", "Modalità Sempre Chiuso", 0, 0, false);
                     Serial.println("Porta chiusa per modalità ALWAYS_CLOSED");
                 }
@@ -157,27 +189,23 @@ void door_task(void *pvParameters) {
                 if (door_open) {
                     digitalWrite(ledverde, HIGH);
                     door_open = false;
-                    startMotor(false);
+                    if (motor_type == STEP) startMotor(false);
+                    else setServoPosition(false);
                     add_log_entry(timestamp_full, "Modalità automatica", "Modalità Automatica", 0, 0, false);
                     Serial.println("Porta chiusa per modalità AUTO");
                 } else {
-                    // Log per passaggio a modalità AUTO anche se la porta è già chiusa
                     add_log_entry(timestamp_full, "Modalità automatica", "Modalità Automatica", 0, 0, false);
                     Serial.println("Passaggio a modalità AUTO");
                 }
             }
-            last_mode = current_mode; // Aggiorna l'ultima modalità
+            last_mode = current_mode;
         }
 
-        if (current_mode == ALWAYS_OPEN) {
+        if (current_mode == ALWAYS_OPEN || current_mode == ALWAYS_CLOSED) {
             vTaskDelay(100 / portTICK_PERIOD_MS);
-            continue; // Ignora altre logiche
-        } else if (current_mode == ALWAYS_CLOSED) {
-            vTaskDelay(100 / portTICK_PERIOD_MS);
-            continue; // Ignora altre logiche
+            continue;
         }
 
-        // Modalità AUTO
         if (door_sync_count > 0) {
             digitalWrite(detected, LOW);
             bool is_authorized = false;
@@ -185,7 +213,6 @@ void door_task(void *pvParameters) {
             uint16_t country_code = last_country_code;
             uint64_t device_code = last_device_code;
 
-            // Cerca il gatto
             for (size_t i = 0; i < num_cats; i++) {
                 if (authorized_cats[i].device_code == last_device_code) {
                     cat_name = authorized_cats[i].name;
@@ -200,12 +227,13 @@ void door_task(void *pvParameters) {
                     digitalWrite(ledverde, LOW);
                     door_open = true;
                     door_timer_start = xTaskGetTickCount();
-                    startMotor(true);
+                    if (motor_type == STEP) startMotor(true);
+                    else setServoPosition(true);
                     Serial.printf("[%s] Rilevato gatto: %s, Autorizzato: Sì\n", time_str, cat_name.c_str());
                     add_log_entry(timestamp_full, "Autorizzato", cat_name, country_code, device_code, true);
                     log_emitted = true;
                 } else if (door_open) {
-                    door_timer_start = xTaskGetTickCount(); // Aggiorna timer senza log
+                    door_timer_start = xTaskGetTickCount();
                 }
             } else {
                 if (millis() - last_unauthorized_log >= UNAUTHORIZED_LOG_INTERVAL) {
@@ -228,7 +256,8 @@ void door_task(void *pvParameters) {
                 digitalWrite(ledverde, LOW);
                 door_open = true;
                 door_timer_start = xTaskGetTickCount();
-                startMotor(true);
+                if (motor_type == STEP) startMotor(true);
+                else setServoPosition(true);
                 contaporta = 0;
                 Serial.printf("[%s] Apertura manuale tramite pblue\n", time_str);
                 add_log_entry(timestamp_full, "Manuale", "Manuale", 0, 0, true);
@@ -240,10 +269,10 @@ void door_task(void *pvParameters) {
                     contaporta = 12000;
                     digitalWrite(ledverde, HIGH);
                     door_open = false;
-                    startMotor(false);
+                    if (motor_type == STEP) startMotor(false);
+                    else setServoPosition(false);
                     Serial.printf("[%s] Porta chiusa dopo timeout\n", time_str);
-                    // Rimosso add_log_entry per timeout
-                    log_emitted = false; // Resetta per il prossimo accesso
+                    log_emitted = false;
                 }
             }
         }

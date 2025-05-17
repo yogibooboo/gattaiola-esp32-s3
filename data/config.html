@@ -12,7 +12,7 @@
             background-color: #f4f4f4;
             color: #333;
         }
-        h1, h2 {
+        h1, h2, h3 {
             text-align: center;
             color: #2c3e50;
         }
@@ -26,6 +26,10 @@
             padding: 20px;
             border-radius: 5px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .sub-section {
+            margin-top: 15px;
+            padding-left: 10px;
         }
         .cats-table {
             width: 100%;
@@ -52,11 +56,14 @@
             width: 200px;
             font-weight: bold;
         }
-        input[type="text"], input[type="number"], input[type="checkbox"] {
+        input[type="text"], input[type="number"], select {
             padding: 8px;
             border: 1px solid #ccc;
             border-radius: 5px;
             width: 200px;
+        }
+        input[type="checkbox"] {
+            vertical-align: middle;
         }
         button {
             padding: 10px 20px;
@@ -76,10 +83,10 @@
             font-weight: bold;
         }
         @media (max-width: 600px) {
-            .cats-table, input[type="text"], input[type="number"] {
+            .cats-table, input[type="text"], input[type="number"], select {
                 font-size: 14px;
             }
-            label, input {
+            label, input, select {
                 width: 100%;
                 box-sizing: border-box;
             }
@@ -137,13 +144,35 @@
                 <label for="unauthorizedLogInterval">Intervallo Log Non Autorizzati (ms):</label>
                 <input type="number" id="unauthorizedLogInterval" min="1000">
             </div>
-            <div class="form-group">
-                <label for="stepsPerMovement">Passi per Movimento:</label>
-                <input type="number" id="stepsPerMovement" min="1">
-            </div>
-            <div class="form-group">
-                <label for="stepIntervalUs">Intervallo Passi (μs):</label>
-                <input type="number" id="stepIntervalUs" min="100">
+            <div class="sub-section">
+                <h3>Parametri Motore</h3>
+                <div class="form-group">
+                    <label for="motorType">Tipo Motore:</label>
+                    <select id="motorType">
+                        <option value="step">Step Motor</option>
+                        <option value="servo">Servomotore</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="stepsPerMovement">Passi per Movimento:</label>
+                    <input type="number" id="stepsPerMovement" min="1">
+                </div>
+                <div class="form-group">
+                    <label for="stepIntervalUs">Intervallo Passi (μs):</label>
+                    <input type="number" id="stepIntervalUs" min="100">
+                </div>
+                <div class="form-group">
+                    <label for="servoOpenUs">Posizione Aperta (μs):</label>
+                    <input type="number" id="servoOpenUs" placeholder="2000">
+                </div>
+                <div class="form-group">
+                    <label for="servoClosedUs">Posizione Chiusa (μs):</label>
+                    <input type="number" id="servoClosedUs" placeholder="1000">
+                </div>
+                <div class="form-group">
+                    <label for="servoTransitionMs">Tempo Transizione (ms):</label>
+                    <input type="number" id="servoTransitionMs" placeholder="500">
+                </div>
             </div>
             <div class="form-group">
                 <label for="wifiVerboseLog">Log Wi-Fi Dettagliato:</label>
@@ -157,6 +186,7 @@
             <button onclick="saveConfig()">Salva</button>
             <button onclick="clearLog()">Cancella Log</button>
             <button onclick="resetDefaults()">Ripristina Default</button>
+            <button onclick="resetSystem()">Resetta Sistema</button>
             <div id="feedback"></div>
         </div>
     </div>
@@ -177,6 +207,10 @@
                 document.getElementById('stepIntervalUs').value = data.STEP_INTERVAL_US;
                 document.getElementById('wifiVerboseLog').checked = data.WIFI_VERBOSE_LOG;
                 document.getElementById('contaporta').value = data.contaporta;
+                document.getElementById('motorType').value = data.motor_type;
+                document.getElementById('servoOpenUs').value = data.servo_open_us;
+                document.getElementById('servoClosedUs').value = data.servo_closed_us;
+                document.getElementById('servoTransitionMs').value = data.servo_transition_ms;
                 showFeedback("Configurazione caricata");
             } catch (error) {
                 showFeedback("Errore caricamento configurazione: " + error.message);
@@ -294,10 +328,14 @@
                 STEPS_PER_MOVEMENT: parseInt(document.getElementById('stepsPerMovement').value),
                 STEP_INTERVAL_US: parseInt(document.getElementById('stepIntervalUs').value),
                 WIFI_VERBOSE_LOG: document.getElementById('wifiVerboseLog').checked,
-                contaporta: parseInt(document.getElementById('contaporta').value)
+                contaporta: parseInt(document.getElementById('contaporta').value),
+                motor_type: document.getElementById('motorType').value,
+                servo_open_us: parseInt(document.getElementById('servoOpenUs').value),
+                servo_closed_us: parseInt(document.getElementById('servoClosedUs').value),
+                servo_transition_ms: parseInt(document.getElementById('servoTransitionMs').value)
             };
 
-            if (Object.values(config).some(v => isNaN(v) && typeof v !== 'boolean')) {
+            if (Object.values(config).some(v => isNaN(v) && typeof v !== 'boolean' && typeof v !== 'string')) {
                 showFeedback("Errore: tutti i campi numerici sono obbligatori");
                 return;
             }
@@ -387,6 +425,25 @@
                 }
             } catch (error) {
                 showFeedback("Errore ripristino default: " + error.message);
+            }
+        }
+
+        async function resetSystem() {
+            if (!confirm("Riavviare il sistema?")) return;
+            try {
+                const response = await fetch('/reset_system', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                const data = await response.json();
+                if (data.success) {
+                    showFeedback("Sistema in riavvio...");
+                } else {
+                    showFeedback("Errore: " + data.error);
+                }
+            } catch (error) {
+                showFeedback("Errore riavvio: " + error.message);
             }
         }
 
