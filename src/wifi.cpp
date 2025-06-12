@@ -38,12 +38,15 @@ void wifi_task(void *pvParameters) {
                 if (!server_started) {
                     ElegantOTA.begin(&server);
                     Serial.println("Server WebSocket e OTA avviato. Visita http://<IP>/update per OTA.");
-                    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-                        request->send(SPIFFS, "/index.html", "text/html");
-                    });
+                    //server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+                    //    request->send(SPIFFS, "/index.html", "text/html");
+                    //});
                     server.on("/config", HTTP_GET, [](AsyncWebServerRequest *request) {
                         request->send(SPIFFS, "/config.html", "text/html");
                     });
+
+                    server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");    ///aggiunto per prova icone
+
                     ws.onEvent(onWebSocketEvent);
                     server.addHandler(&ws);
                     server.on("/config_data", HTTP_GET, [](AsyncWebServerRequest *request) {
