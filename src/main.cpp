@@ -18,6 +18,14 @@ const uint8_t stepSequence[4][4] = {
     {0, 1, 0, 1}
 };
 
+// Sequenza FDX-B (128 bit)
+const uint8_t fdx_b_sequence[128] = {
+    0,0,0,0,0,0,0,0,0,0,1,0,0,1,0,1,0,1,0,1,1,0,1,1,1,0,1,1,1,1,0,1,
+    0,0,1,0,0,1,0,0,1,1,1,1,0,0,1,1,0,1,1,1,1,0,0,1,1,0,0,0,0,1,1,1,
+    1,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,1,0,0,1,1,1,0,0,0,1,1,0,0,1,
+    0,0,1,1,1,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,0,1,0,1,0,1,0,1,1
+};
+
 // Variabili globali
 hw_timer_t *timer = NULL;
 AsyncWebSocket ws("/ws");
@@ -51,6 +59,14 @@ uint32_t servo_open_us = 2000;
 uint32_t servo_closed_us = 1000;
 uint32_t servo_transition_ms = 500;
 
+// Variabili per il segnale FDX-B
+hw_timer_t *fdxTimer = NULL;
+volatile size_t fdx_bit_index = 0;
+volatile bool fdx_last_half_value = false;
+portMUX_TYPE fdxTimerMux = portMUX_INITIALIZER_UNLOCKED;
+#define FDX_B_PIN 18  // Pin GPIO per il segnale FDX-B
+#define HALF_BIT_TICKS 298  // Conteggio per mezza bit (119.2 μs con prescaler 64)
+
 // Configurazione RMT
 #define RMT_CHANNEL RMT_CHANNEL_0
 #define RMT_CLK_DIV 1
@@ -81,6 +97,30 @@ void setupRMT() {
         {{{ high_ticks, 1, low_ticks, 0 }}}
     };
     rmt_write_items(RMT_CHANNEL, items, 2, false);
+}
+
+// ISR per il segnale FDX-B
+void IRAM_ATTR onFdxTimer() {
+    portENTER_CRITICAL_ISR(&fdxTimerMux);
+    
+    // Determina il bit corrente
+    uint8_t bit = fdx_b_sequence[fdx_bit_index / 2];
+    
+    // Prima metà: opposta all'ultima metà del bit precedente
+    bool first_half_value = !fdx_last_half_value;
+    if (fdx_bit_index % 2 == 0) {
+        digitalWrite(FDX_B_PIN, first_half_value);
+    } else {
+        // Seconda metà: cambia livello solo se il bit è 0
+        bool second_half_value = (bit == 0) ? !first_half_value : first_half_value;
+        digitalWrite(FDX_B_PIN, second_half_value);
+        fdx_last_half_value = second_half_value;
+    }
+    
+    // Avanza l'indice (torna a 0 dopo 256, cioè 128 bit x 2 semionde)
+    fdx_bit_index = (fdx_bit_index + 1) % 256;
+    
+    portEXIT_CRITICAL_ISR(&fdxTimerMux);
 }
 
 // Funzione per leggere config.json da SPIFFS
@@ -344,6 +384,14 @@ void setup() {
         Serial.printf("Impostazione PWM iniziale: servo_closed_us=%u us, duty=%u\n", servo_closed_us, duty);
         ledcWrite(SERVO_PWM_CHANNEL, duty); // Inizializza in posizione chiusa
     }
+
+    // Configurazione segnale FDX-B
+    pinMode(FDX_B_PIN, OUTPUT);
+    digitalWrite(FDX_B_PIN, LOW);
+    fdxTimer = timerBegin(2, 32, true); // Timer 2, prescaler 64 (1 tick = 0.8 μs)
+    timerAttachInterrupt(fdxTimer, &onFdxTimer, true);
+    timerAlarmWrite(fdxTimer, HALF_BIT_TICKS, true);
+    timerAlarmEnable(fdxTimer);
 
     start_rfid_task();
     xTaskCreatePinnedToCore(door_task, "Door_Task", 4096, NULL, 2, NULL, 0);
