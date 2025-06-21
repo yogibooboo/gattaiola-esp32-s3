@@ -63,6 +63,7 @@ void media_correlazione_32() {
     static int32_t ultima_distanza = 0, newbit = 0, numbit = 0;
     static bool newpeak = false;
     static bool last_pblues = true; // Stato precedente di pblues (attivo basso)
+    static int32_t nuova_distanza=0;
     pinMode(41, OUTPUT);
     //pinMode(39, OUTPUT);
     GPIO.enable1_w1ts.val = (1 << (41 - 32));
@@ -135,11 +136,14 @@ void media_correlazione_32() {
 
             // Calcolo distanze
             if (num_picchi > 1 && newpeak) {
-                int32_t nuova_distanza = peaks[(num_picchi-1) & 0xFF] - peaks[(num_picchi-2) & 0xFF];
+                //2006 int32_t nuova_distanza = peaks[(num_picchi-1) & 0xFF] - peaks[(num_picchi-2) & 0xFF];
+                ultima_distanza=nuova_distanza;
+                nuova_distanza = peaks[(num_picchi-1) & 0xFF] - peaks[(num_picchi-2) & 0xFF];
                 dist[num_distanze & 0xFF] = nuova_distanza;
                 num_distanze++;
 
                 // Decodifica bit
+                /* modificato #2006
                 if (stato_decodifica == 0) {
                     if (nuova_distanza >= soglia_mezzo_bit) {
                         bits[num_bits & 0xFF].value = 1;
@@ -167,6 +171,54 @@ void media_correlazione_32() {
                     }
                     stato_decodifica = 0;
                 }
+                */
+                if (stato_decodifica == 0) {
+                    if (nuova_distanza >= soglia_mezzo_bit) {
+                        bits[num_bits & 0xFF].value = 1;
+                        bits[num_bits & 0xFF].pos = ia - 24;
+                        num_bits++;
+                        newbit = 1; numbit = 1;
+                    } else {
+                        
+                        stato_decodifica = 1;
+                    }
+                } else {
+                    if (stato_decodifica == 1)  {
+                        // PRIMA PROVA: se la somma delle ultime due distanze è maggiore di 32+8 allora il primo era un 1 e il secondo è l'inizio di uno zero
+                        if((nuova_distanza+ultima_distanza)>=42){
+                            bits[num_bits & 0xFF].value = 1;
+                            bits[num_bits & 0xFF].pos = ia - 24 - nuova_distanza;
+                            num_bits++;
+                            newbit = 1; numbit = 1;
+                            stato_decodifica = 2;
+                            if((nuova_distanza+ultima_distanza)>=52){  // #2106 ma se addirittura supera 52 erano 2 uni
+                                bits[num_bits & 0xFF].value = 1;
+                                bits[num_bits & 0xFF].pos = ia - 24;
+                                num_bits++;
+                                newbit = 1; numbit = 2;
+                                stato_decodifica = 0;
+                            
+                            } 
+                        }else {
+                            bits[num_bits & 0xFF].value = 0;
+                            bits[num_bits & 0xFF].pos = ia - 24;
+                            num_bits++;
+                            newbit = 0; numbit = 1;
+                            stato_decodifica = 0;
+                        }
+                    }
+                    
+                }
+                if (stato_decodifica == 2)  {    //test ridondante
+
+                    stato_decodifica = 0;
+                    bits[num_bits & 0xFF].value = 0;
+                    bits[num_bits & 0xFF].pos = ia - 24;
+                    num_bits++;
+                    newbit = 0; numbit = 1;
+                }
+
+
             }
 
             // Decodifica byte
@@ -174,7 +226,7 @@ void media_correlazione_32() {
                 switch (stato_decobytes) {
                     case 0:
                         if (newbit == 0) contatore_zeri++;
-                        else if (contatore_zeri >= 10) {
+                        else if (contatore_zeri == 10) {   //2006 contatore_zeri >= 10
                             stato_decobytes = 1;
                             contatore_bytes = contatore_bits = 0;
                             for (int j = 0; j < 10; j++) bytes[j] = 0;
