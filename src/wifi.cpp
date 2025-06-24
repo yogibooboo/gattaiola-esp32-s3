@@ -1,5 +1,6 @@
 #include "common.h"
 #include <ElegantOTA.h>
+#include "buffer_analyzer.h"
 
 void wifi_task(void *pvParameters) {
     bool server_started = false;
@@ -38,14 +39,11 @@ void wifi_task(void *pvParameters) {
                 if (!server_started) {
                     ElegantOTA.begin(&server);
                     Serial.println("Server WebSocket e OTA avviato. Visita http://<IP>/update per OTA.");
-                    //server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-                    //    request->send(SPIFFS, "/index.html", "text/html");
-                    //});
                     server.on("/config", HTTP_GET, [](AsyncWebServerRequest *request) {
                         request->send(SPIFFS, "/config.html", "text/html");
                     });
 
-                    server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");    ///aggiunto per prova icone
+                    server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
 
                     ws.onEvent(onWebSocketEvent);
                     server.addHandler(&ws);
@@ -207,7 +205,7 @@ void wifi_task(void *pvParameters) {
                     });
                     server.on("/reset_system", HTTP_POST, [](AsyncWebServerRequest *request) {
                         request->send(200, "application/json", "{\"success\":true}");
-                        vTaskDelay(100 / portTICK_PERIOD_MS); // Breve ritardo per inviare la risposta
+                        vTaskDelay(100 / portTICK_PERIOD_MS);
                         ESP.restart();
                     });
                     server.begin();
@@ -292,7 +290,8 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
                 Serial.printf("[%s] Inizio acquisizione da WebSocket per client ID %u\n", time_str, client->id());
                 uint32_t current_index = i_interrupt;
                 uint32_t start_index = (current_index - 10000 + ADC_BUFFER_SIZE) % ADC_BUFFER_SIZE;
-                Serial.printf("[%s] DEBUG: i_interrupt=%u, start_index=%u\n", time_str, current_index, start_index);
+                // Rimuovo log di debug per ridurre ritardo
+                // Serial.printf("[%s] DEBUG: i_interrupt=%u, start_index=%u\n", time_str, current_index, start_index);
                 if (start_index + 10000 <= ADC_BUFFER_SIZE) {
                     memcpy(temp_buffer, (const void*)&adc_buffer[start_index], 10000 * sizeof(uint16_t));
                 } else {
@@ -301,9 +300,11 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
                     memcpy(temp_buffer, (const void*)&adc_buffer[start_index], first_chunk_size * sizeof(uint16_t));
                     memcpy(&temp_buffer[first_chunk_size], (const void*)adc_buffer, second_chunk_size * sizeof(uint16_t));
                 }
-                Serial.printf("[%s] Invio buffer al client ID %u\n", time_str, client->id());
+                // Invia il buffer immediatamente
                 client->binary((uint8_t*)temp_buffer, 10000 * sizeof(uint16_t));
                 Serial.printf("[%s] Buffer inviato al client ID %u\n", time_str, client->id());
+                // Esegui analisi dopo l'invio
+                analyze_buffer_32(temp_buffer, 10000);
             } else if (message == "get_door_mode") {
                 String mode_str;
                 portENTER_CRITICAL(&doorModeMux);

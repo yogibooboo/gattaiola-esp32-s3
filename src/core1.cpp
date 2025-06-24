@@ -75,15 +75,36 @@ void media_correlazione_32() {
         for (int j = 0; j < 256; j++) filt[j] = corr[j] = 0;
         initialized = true;
     }
-
+    bool wait10000=true;
     while (true) {
         
         // Controlla se ci sono dati
-        available_samples=(i_interrupt-ia)&0x3fff;
-        if (available_samples <= 0) {
-            vTaskDelay(1 / portTICK_PERIOD_MS);
+        available_samples=(i_interrupt-ia); ////&0x3fff;
+
+        /*while (available_samples <= 0) {
+            available_samples = (i_interrupt - ia) & 0x3FFF;
+        }*/
+        
+        if (available_samples <= 10) {
+            vTaskDelay(74 / portTICK_PERIOD_MS);
             continue;
         }
+        
+       /* if (wait10000){
+            if (available_samples <= 10000) {
+                vTaskDelay(1 / portTICK_PERIOD_MS);
+                continue;
+            } else{
+                wait10000 = false;
+            }
+        } else{
+            if (available_samples <= 0) {
+                vTaskDelay(1 / portTICK_PERIOD_MS);
+                wait10000=true;
+                continue;
+            } 
+        } */
+
 
         // Elabora un campione
         //portENTER_CRITICAL_ISR(&mux);
@@ -267,6 +288,7 @@ void media_correlazione_32() {
                                     last_country_code = country_code; // Aggiunto
                                     door_sync_count++; // Incremento solo con CRC OK
                                     display_sync_count++; // Incremento solo con CRC OK
+                                    //Serial.printf(" OK ");
                                 }
                                 contatore_zeri = contatore_bytes = 0;
                                 stato_decobytes = 0;
