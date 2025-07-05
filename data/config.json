@@ -12,6 +12,13 @@
     "servo_transition_ms": 500,
     "authorized_cats": [
         {
+            "device_code": 263002119508,
+            "country_code": 900,
+            "name": "Nastronero",
+            "authorized": true
+        },
+
+        {
             "device_code": 263002119568,
             "country_code": 900,
             "name": "Scheggiafinto",
