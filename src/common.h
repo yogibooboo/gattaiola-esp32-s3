@@ -49,7 +49,7 @@ enum MotorType { STEP, SERVO };
 #define ENABLE_PIN 9
 
 // Costanti per ADC
-#define ADC_CHANNEL 0
+#define ADC_CHANNEL 3   //era 0
 
 // Costanti per servomotore
 #define SERVO_PWM_FREQ 50

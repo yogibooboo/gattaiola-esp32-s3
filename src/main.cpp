@@ -338,7 +338,9 @@ void setup() {
 
     setupRMT();
 
-    fadcInit(1, 1);
+    pinMode(4, INPUT); //0707 Configure GPIO4 as input
+    analogSetPinAttenuation(4, ADC_11db); //0707 Set attenuation for GPIO4 due operazioni ridondanti. lo fa già fadcinit
+    fadcInit(1, 4); //0707 era fadcInit(1, 1);
     SENS.sar_meas1_ctrl2.sar1_en_pad = (1 << ADC_CHANNEL);
     SENS.sar_meas1_ctrl2.meas1_start_sar = 1;
 
@@ -366,7 +368,7 @@ void setup() {
         digitalWrite(STEP_A_PLUS, LOW); // GND
         pinMode(STEP_A_MINUS, OUTPUT);
         digitalWrite(STEP_A_MINUS, HIGH); // VCC
-        pinMode(STEP_B_PLUS, OUTPUT);
+        pinMode(STEP_B_PLUS, OUTPUT);  //pwm motore
         pinMode(STEP_B_MINUS, OUTPUT);
         digitalWrite(STEP_B_MINUS, LOW); // Inutilizzato
         pinMode(ENABLE_PIN, OUTPUT);

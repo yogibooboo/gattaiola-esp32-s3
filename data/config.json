@@ -6,7 +6,7 @@
     "unauthorized_log_interval": 60000,
     "wifi_verbose_log": true,
     "door_mode": "AUTO",
-    "motor_type": "step",
+    "motor_type": "servo",
     "servo_open_us": 2000,
     "servo_closed_us": 1000,
     "servo_transition_ms": 500,
@@ -17,6 +17,14 @@
             "name": "Nastronero",
             "authorized": true
         },
+
+              {
+            "device_code": 215002273326,
+            "country_code": 900,
+            "name": "Nastroverde",
+            "authorized": true
+        },
+
 
         {
             "device_code": 263002119568,

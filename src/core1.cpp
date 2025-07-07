@@ -48,7 +48,7 @@ void IRAM_ATTR onTimer() {
         i_interrupt++;
         adc_buffer[i_interrupt & 0x3FFF] = datoadc;
         i_interrupt++;
-        fadcStart(0);
+        fadcStart(3);  //0707 era fadcStart(0);
     }
     //digitalWrite(21, LOW);
 }
