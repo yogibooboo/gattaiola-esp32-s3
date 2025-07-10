@@ -37,8 +37,8 @@ enum MotorType { STEP, SERVO };
 // Costanti per i pin
 #define PWM_PIN 14
 #define PWM_FREQ 134200
-#define pblue 2
-#define expblue 39
+#define pblue 39     //0707 2
+//#define expblue 39    //0707
 #define ledverde 7    //era 20
 #define detected 15
 #define wifi_led 6

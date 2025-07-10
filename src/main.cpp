@@ -326,7 +326,7 @@ void setup() {
     }
 
     pinMode(pblue, INPUT_PULLUP);
-    pinMode(expblue, INPUT);
+    //pinMode(expblue, INPUT);  //0707
     pinMode(ledverde, OUTPUT);
     digitalWrite(ledverde, HIGH);
     pinMode(detected, OUTPUT);
