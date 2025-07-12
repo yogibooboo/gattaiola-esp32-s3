@@ -9,7 +9,8 @@
 // Credenziali Wi-Fi
 const char *ssid = "VodafoneRibes";
 const char *password = "scheggia2000";
-
+//const char *ssid = "Mi 10";
+//const char *password = "12345678";
 // Definizione della sequenza delle fasi per full-step
 const uint8_t stepSequence[4][4] = {
     {1, 0, 0, 1},

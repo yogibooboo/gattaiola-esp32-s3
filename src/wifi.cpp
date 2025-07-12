@@ -18,9 +18,18 @@ void wifi_task(void *pvParameters) {
                 Serial.println("Wi-Fi: Tentativo di connessione...");
             }
 
+
+            /*WiFi.disconnect(true, true);
+            delay(500);
+            WiFi.mode(WIFI_OFF);
+            delay(500); */
+
+
+
+
             WiFi.begin(ssid, password);
             unsigned long start = millis();
-            while (WiFi.status() != WL_CONNECTED && millis() - start < 5000) {
+            while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) {  //era 5000
                 vTaskDelay(100 / portTICK_PERIOD_MS);
             }
 
