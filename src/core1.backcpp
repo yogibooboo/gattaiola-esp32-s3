@@ -87,7 +87,7 @@ void media_correlazione_32() {
         }*/
         
         if (available_samples <= 10) {    //10
-            vTaskDelay(72 / portTICK_PERIOD_MS);     //74
+            vTaskDelay(74 / portTICK_PERIOD_MS);     //74
             continue;
         }
         
@@ -115,7 +115,7 @@ void media_correlazione_32() {
         // Logica di analisi
         const int larghezza_finestra = 8;
         const int lunghezza_correlazione = 32;
-        const int soglia_mezzo_bit = 25;      //1507
+        const int soglia_mezzo_bit = 24;      //1507
 
         if (ia >= 32) {
             // Calcolo filtro mobile
@@ -159,14 +159,43 @@ void media_correlazione_32() {
             // Calcolo distanze
             if (num_picchi > 1 && newpeak) {
                 //2006 int32_t nuova_distanza = peaks[(num_picchi-1) & 0xFF] - peaks[(num_picchi-2) & 0xFF];
-                ultima_distanza = peaks[(num_picchi - 1) & 0xFF] - peaks[(num_picchi - 2) & 0xFF];
-                dist[num_distanze & 0xFF] = ultima_distanza;
-
+                ultima_distanza=nuova_distanza;
+                nuova_distanza = peaks[(num_picchi-1) & 0xFF] - peaks[(num_picchi-2) & 0xFF];
+                dist[num_distanze & 0xFF] = nuova_distanza;
                 num_distanze++;
 
- 
+                // Decodifica bit
+                /* modificato #2006
                 if (stato_decodifica == 0) {
-                    if (ultima_distanza >= soglia_mezzo_bit) {
+                    if (nuova_distanza >= soglia_mezzo_bit) {
+                        bits[num_bits & 0xFF].value = 1;
+                        bits[num_bits & 0xFF].pos = ia - 24;
+                        num_bits++;
+                        newbit = 1; numbit = 1;
+                    } else {
+                        ultima_distanza = nuova_distanza;
+                        stato_decodifica = 1;
+                    }
+                } else {
+                    if (nuova_distanza < soglia_mezzo_bit) {
+                        bits[num_bits & 0xFF].value = 0;
+                        bits[num_bits & 0xFF].pos = ia - 24;
+                        num_bits++;
+                        newbit = 0; numbit = 1;
+                    } else {
+                        bits[num_bits & 0xFF].value = 1;
+                        bits[num_bits & 0xFF].pos = ia - 24 - nuova_distanza;
+                        num_bits++;
+                        bits[num_bits & 0xFF].value = 1;
+                        bits[num_bits & 0xFF].pos = ia - 24;
+                        num_bits++;
+                        newbit = 1; numbit = 2;
+                    }
+                    stato_decodifica = 0;
+                }
+                */
+                if (stato_decodifica == 0) {
+                    if (nuova_distanza >= soglia_mezzo_bit) {
                         bits[num_bits & 0xFF].value = 1;
                         bits[num_bits & 0xFF].pos = ia - 24;
                         num_bits++;
@@ -175,35 +204,37 @@ void media_correlazione_32() {
                         
                         stato_decodifica = 1;
                     }
-                } else if (stato_decodifica == 1)  {
+                } else {
+                    if (stato_decodifica == 1)  {
                         // PRIMA PROVA: se la somma delle ultime due distanze è maggiore di 32+8 allora il primo era un 1 e il secondo è l'inizio di uno zero
-                    confro=42;   //1507
-                    if(bits[(num_bits-1) & 0xFF].value==1) confro=48;   //test su bit orecedente
-                    if((ultima_distanza + dist[(num_distanze - 2) & 0xFF]) >= confro) {
-                        bits[num_bits & 0xFF].value = 1;
-                        bits[num_bits & 0xFF].pos = ia - 24 - ultima_distanza;
-                        num_bits++;
-                        newbit = 1; numbit = 1;
-                        stato_decodifica = 2;  //in buffer_analyzer non c'è
-                        if ((ultima_distanza + dist[(num_distanze - 2) & 0xFF]) >= 52) {  // #2106 ma se addirittura supera 52 erano 2 uni
+                        confro=42;   //1507
+                        //if(bits[(num_bits-1) & 0xFF].value==1) confro=48;   //test su bit orecedente
+                        if((nuova_distanza+ultima_distanza)>=confro){
                             bits[num_bits & 0xFF].value = 1;
+                            bits[num_bits & 0xFF].pos = ia - 24 - nuova_distanza;
+                            num_bits++;
+                            newbit = 1; numbit = 1;
+                            stato_decodifica = 2;
+                            if((nuova_distanza+ultima_distanza)>=52){  // #2106 ma se addirittura supera 52 erano 2 uni
+                                bits[num_bits & 0xFF].value = 1;
+                                bits[num_bits & 0xFF].pos = ia - 24;
+                                num_bits++;
+                                newbit = 1; numbit = 2;
+                                stato_decodifica = 0;
+                            
+                            } 
+                        }else {
+                            bits[num_bits & 0xFF].value = 0;
                             bits[num_bits & 0xFF].pos = ia - 24;
                             num_bits++;
-                            newbit = 1; numbit = 2;
+                            newbit = 0; numbit = 1;
                             stato_decodifica = 0;
-                        
-                        } 
-                    }else {
-                        bits[num_bits & 0xFF].value = 0;
-                        bits[num_bits & 0xFF].pos = ia - 24;
-                        num_bits++;
-                        newbit = 0; numbit = 1;
-                        stato_decodifica = 0;
+                        }
                     }
                     
-                    
                 }
-                else if (stato_decodifica == 2)  {    
+                if (stato_decodifica == 2)  {    //test ridondante
+
                     stato_decodifica = 0;
                     bits[num_bits & 0xFF].value = 0;
                     bits[num_bits & 0xFF].pos = ia - 24;

@@ -17,7 +17,7 @@ void analyze_buffer_32(const uint16_t* buffer, size_t length) {
     uint16_t country_code = 0;
     uint64_t device_code = 0;
     bool crc_ok = false;
-
+    uint8_t confrobis=0;
     // Variabili di stato
     int32_t max_i = 0, min_i = 0, max_i8 = 0, min_i8 = 0, min_i_iniziale = 0, max_i_iniziale = 0;
     int32_t stato = 1;
@@ -85,7 +85,7 @@ void analyze_buffer_32(const uint16_t* buffer, size_t length) {
 
                 // Decodifica bit
                 if (stato_decodifica == 0) {
-                    if (ultima_distanza >= 24) {
+                    if (ultima_distanza >= 25) {   //1507 soglia mezzo bit
                         bits[num_bits & 0xFF].value = 1;
                         bits[num_bits & 0xFF].pos = ia - 24;
                         num_bits++;
@@ -95,7 +95,9 @@ void analyze_buffer_32(const uint16_t* buffer, size_t length) {
                         stato_decodifica = 1;
                     }
                 } else if (stato_decodifica == 1) {
-                    if ((ultima_distanza + dist[(num_distanze - 2) & 0xFF]) >= 42) {
+                    confrobis=42;   //1507
+                    if(bits[(num_bits-1) & 0xFF].value==1) confrobis=48; 
+                    if ((ultima_distanza + dist[(num_distanze - 2) & 0xFF]) >= confrobis) {
                         bits[num_bits & 0xFF].value = 1;
                         bits[num_bits & 0xFF].pos = ia - 24 - ultima_distanza;
                         num_bits++;
