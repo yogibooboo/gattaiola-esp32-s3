@@ -328,8 +328,8 @@ void setup() {
 
     pinMode(pblue, INPUT_PULLUP);
     //pinMode(expblue, INPUT);  //0707
-    pinMode(ledverde, OUTPUT);
-    digitalWrite(ledverde, HIGH);
+    pinMode(ledrosso, OUTPUT);
+    digitalWrite(ledrosso, CHIUSO);
     pinMode(detected, OUTPUT);
     digitalWrite(detected, HIGH);
     pinMode(wifi_led, OUTPUT);
@@ -391,10 +391,10 @@ void setup() {
     // Configurazione segnale FDX-B
     pinMode(FDX_B_PIN, OUTPUT);
     digitalWrite(FDX_B_PIN, LOW);
-    /*fdxTimer = timerBegin(2, 32, true); // Timer 2, prescaler 64 (1 tick = 0.8 μs)
+    fdxTimer = timerBegin(2, 32, true); // Timer 2, prescaler 64 (1 tick = 0.8 μs)
     timerAttachInterrupt(fdxTimer, &onFdxTimer, true);
     timerAlarmWrite(fdxTimer, HALF_BIT_TICKS, true);
-    timerAlarmEnable(fdxTimer); */
+    timerAlarmEnable(fdxTimer); 
 
     start_rfid_task();
     xTaskCreatePinnedToCore(door_task, "Door_Task", 4096, NULL, 2, NULL, 0);

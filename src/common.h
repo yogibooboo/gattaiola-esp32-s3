@@ -39,7 +39,9 @@ enum MotorType { STEP, SERVO };
 #define PWM_FREQ 134200
 #define pblue 39     //0707 2
 //#define expblue 39    //0707
-#define ledverde 7    //era 20
+#define ledrosso 7    //era 20
+#define APERTO LOW
+#define CHIUSO HIGH
 #define detected 15
 #define wifi_led 6
 #define STEP_A_PLUS 10

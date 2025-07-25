@@ -25,8 +25,10 @@ void wifi_task(void *pvParameters) {
             delay(500); */
 
 
-
-
+           /* WiFi.disconnect(true);
+            WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE, INADDR_NONE);
+            const char* hostname = "Gattaiola"; // Nome personalizzato
+            WiFi.setHostname(hostname); */
             WiFi.begin(ssid, password);
             unsigned long start = millis();
             while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) {  //era 5000
@@ -286,6 +288,17 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
         serializeJson(doc, json);
         client->text(json);
         Serial.printf("[%s] Log iniziale inviato al client ID %u\n", time_str, client->id());
+
+    // Invia la modalità corrente della porta al client
+    String mode_str;
+    portENTER_CRITICAL(&doorModeMux);
+    if (door_mode == ALWAYS_OPEN) mode_str = "ALWAYS_OPEN";
+    else if (door_mode == ALWAYS_CLOSED) mode_str = "ALWAYS_CLOSED";
+    else mode_str = "AUTO";
+    portEXIT_CRITICAL(&doorModeMux);
+    client->text("door_mode:" + mode_str);
+    Serial.printf("[%s] Inviato stato modalità iniziale al client ID %u: %s\n", time_str, client->id(), mode_str.c_str());
+
     } else if (type == WS_EVT_DISCONNECT) {
         Serial.printf("[%s] Client WebSocket disconnesso, ID: %u\n", time_str, client->id());
     } else if (type == WS_EVT_DATA) {

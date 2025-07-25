@@ -124,7 +124,7 @@ void door_task(void *pvParameters) {
     portEXIT_CRITICAL(&doorModeMux);
 
     if (initial_mode == ALWAYS_OPEN && !door_open) {
-        digitalWrite(ledverde, LOW);
+        digitalWrite(ledrosso, APERTO);
         door_open = true;
         if (motor_type == STEP) startMotor(true);
         else setServoPosition(true);
@@ -134,7 +134,7 @@ void door_task(void *pvParameters) {
         add_log_entry(timestamp_full, "Modalità sempre aperto", "Modalità Sempre Aperto", 0, 0, true);
         Serial.println("Porta aperta per modalità ALWAYS_OPEN");
     } else if (initial_mode == ALWAYS_CLOSED && door_open) {
-        digitalWrite(ledverde, HIGH);
+        digitalWrite(ledrosso, CHIUSO);
         door_open = false;
         if (motor_type == STEP) startMotor(false);
         else setServoPosition(false);
@@ -144,7 +144,7 @@ void door_task(void *pvParameters) {
         add_log_entry(timestamp_full, "Modalità sempre chiuso", "Modalità Sempre Chiuso", 0, 0, false);
         Serial.println("Porta chiusa per modalità ALWAYS_CLOSED");
     } else if (initial_mode == AUTO && door_open) {
-        digitalWrite(ledverde, HIGH);
+        digitalWrite(ledrosso, CHIUSO);
         door_open = false;
         if (motor_type == STEP) startMotor(false);
         else setServoPosition(false);
@@ -169,7 +169,7 @@ void door_task(void *pvParameters) {
         if (current_mode != last_mode) {
             if (current_mode == ALWAYS_OPEN) {
                 if (!door_open) {
-                    digitalWrite(ledverde, LOW);
+                    digitalWrite(ledrosso, APERTO);
                     door_open = true;
                     if (motor_type == STEP) startMotor(true);
                     else setServoPosition(true);
@@ -178,7 +178,7 @@ void door_task(void *pvParameters) {
                 }
             } else if (current_mode == ALWAYS_CLOSED) {
                 if (door_open) {
-                    digitalWrite(ledverde, HIGH);
+                    digitalWrite(ledrosso, CHIUSO);
                     door_open = false;
                     if (motor_type == STEP) startMotor(false);
                     else setServoPosition(false);
@@ -187,7 +187,7 @@ void door_task(void *pvParameters) {
                 }
             } else if (current_mode == AUTO) {
                 if (door_open) {
-                    digitalWrite(ledverde, HIGH);
+                    digitalWrite(ledrosso, CHIUSO);
                     door_open = false;
                     if (motor_type == STEP) startMotor(false);
                     else setServoPosition(false);
@@ -201,10 +201,10 @@ void door_task(void *pvParameters) {
             last_mode = current_mode;
         }
 
-        if (current_mode == ALWAYS_OPEN || current_mode == ALWAYS_CLOSED) {
+        /*if (current_mode == ALWAYS_OPEN || current_mode == ALWAYS_CLOSED) {
             vTaskDelay(100 / portTICK_PERIOD_MS);
             continue;
-        }
+        }*/    //2207
 
         if (door_sync_count > 0) {
             digitalWrite(detected, LOW);
@@ -223,8 +223,8 @@ void door_task(void *pvParameters) {
             }
 
             if (is_authorized) {
-                if (!door_open && !log_emitted) {
-                    digitalWrite(ledverde, LOW);
+                /* if (!door_open && !log_emitted) {
+                    digitalWrite(ledrosso, APERTO);
                     door_open = true;
                     door_timer_start = xTaskGetTickCount();
                     if (motor_type == STEP) startMotor(true);
@@ -234,7 +234,21 @@ void door_task(void *pvParameters) {
                     log_emitted = true;
                 } else if (door_open) {
                     door_timer_start = xTaskGetTickCount();
+                } */  //2207
+
+                door_timer_start = xTaskGetTickCount();
+                if (!log_emitted) {
+                    Serial.printf("[%s] Rilevato gatto: %s, Autorizzato: Sì\n", time_str, cat_name.c_str());
+                    add_log_entry(timestamp_full, "Autorizzato", cat_name, country_code, device_code, true);
+                    log_emitted = true;
                 }
+                if (!door_open && current_mode == AUTO) {
+                    digitalWrite(ledrosso, APERTO);
+                    door_open = true;
+                    if (motor_type == STEP) startMotor(true);
+                    else setServoPosition(true);
+                }
+
             } else {
                 if (millis() - last_unauthorized_log >= UNAUTHORIZED_LOG_INTERVAL) {
                     if (cat_name != "Sconosciuto") {
@@ -252,8 +266,8 @@ void door_task(void *pvParameters) {
             door_sync_count = 0;
         } else {
             digitalWrite(detected, HIGH);
-            if (!digitalRead(pblue) && !door_open) {
-                digitalWrite(ledverde, LOW);
+            if (!digitalRead(pblue) && !door_open && current_mode == AUTO) {
+                digitalWrite(ledrosso, APERTO);
                 door_open = true;
                 door_timer_start = xTaskGetTickCount();
                 if (motor_type == STEP) startMotor(true);
@@ -264,15 +278,19 @@ void door_task(void *pvParameters) {
                 log_emitted = true;
             } else if (door_open) {
                 TickType_t now_ticks = xTaskGetTickCount();
-                contaporta = (now_ticks - door_timer_start);
-                if ((now_ticks - door_timer_start) >= DOOR_TIMEOUT) {
-                    contaporta = 12000;
-                    digitalWrite(ledverde, HIGH);
-                    door_open = false;
-                    if (motor_type == STEP) startMotor(false);
-                    else setServoPosition(false);
-                    Serial.printf("[%s] Porta chiusa dopo timeout\n", time_str);
-                    log_emitted = false;
+                if (contaporta!=50000){
+                    contaporta = (now_ticks - door_timer_start);
+                    if ((now_ticks - door_timer_start) >= DOOR_TIMEOUT) {
+                        contaporta = 50000;
+                        log_emitted = false;
+                        if (current_mode == AUTO) {
+                            digitalWrite(ledrosso, CHIUSO);
+                            door_open = false;
+                            if (motor_type == STEP) startMotor(false);
+                            else setServoPosition(false);
+                            Serial.printf("[%s] Porta chiusa dopo timeout\n", time_str);
+                        }
+                    }
                 }
             }
         }
