@@ -51,7 +51,8 @@ unsigned long last_millis = 0;
 time_t local_time = 0;
 volatile DoorMode door_mode = AUTO;
 portMUX_TYPE doorModeMux = portMUX_INITIALIZER_UNLOCKED;
-uint16_t temp_buffer[10000];
+uint16_t temp_buffer[16384];
+volatile uint32_t last_encoder_timestamp = 0;
 uint32_t contaporta = 0;
 uint32_t STEPS_PER_MOVEMENT = 2500;
 uint32_t STEP_INTERVAL_US = 500;
@@ -59,6 +60,11 @@ volatile MotorType motor_type = STEP;
 uint32_t servo_open_us = 2000;
 uint32_t servo_closed_us = 1000;
 uint32_t servo_transition_ms = 500;
+EncoderData encoder_buffer[ENCODER_BUFFER_SIZE] = {0};
+size_t encoder_buffer_index = 0;
+volatile uint16_t lastRawAngle = 0;
+volatile uint16_t lastMagnitude = 0;
+AS5600 encoder;
 
 // Variabili per il segnale FDX-B
 hw_timer_t *fdxTimer = NULL;
@@ -288,12 +294,12 @@ void print_task(void *pvParameters) {
             strftime(time_str, sizeof(time_str), "%H:%M:%S", localtime(&now));
         }
         printf("[%s] Sync: %u, OK: %u, Last Seq: [%02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X], "
-               "DC: %llu, CC: %u, ia: %u, i_i: %u, diff: %u, freq: %u, a_s: %ld, contap: %u\n",
+               "DC: %llu, CC: %u, diff: %u, freq: %u, a_s: %ld, contap: %u, rawAngle: %u, magnitude: %u\n",
                time_str, sync_count, display_sync_count,
                last_sequence[0], last_sequence[1], last_sequence[2], last_sequence[3],
                last_sequence[4], last_sequence[5], last_sequence[6], last_sequence[7],
                last_sequence[8], last_sequence[9],
-               (unsigned long long)last_device_code, (long)last_country_code, ia, i_interrupt, (i_interrupt-ia), freq, (long)available_samples, contaporta);
+               (unsigned long long)last_device_code, (long)last_country_code, (i_interrupt-ia), freq, (long)available_samples, contaporta, lastRawAngle, lastMagnitude);
         sync_count = 0;
         display_sync_count = 0;
 
@@ -304,6 +310,17 @@ void print_task(void *pvParameters) {
 void setup() {
     Serial.begin(115200);
     delay(1000);
+      Serial.print("AS5600_LIB_VERSION: ");
+  Serial.println(AS5600_LIB_VERSION);
+    Wire.begin(8, 9); // Inizializza I2C con SDA = GPIO 8, SCL = GPIO 9
+    Wire.setClock(100000); // 100 kHz
+    Wire.setTimeout(100); // Timeout 100 ms
+
+    if (encoder.begin()) { // Verifica la connessione al sensore
+        Serial.println("AS5600 trovato!");
+    } else {
+        Serial.println("AS5600 non trovato. Controlla i collegamenti!");
+    }
     Serial.println("DEBUG: Avvio ESP32-S3 OTA");
     Serial.printf("Flash Size: %u bytes\n", ESP.getFlashChipSize());
     esp_partition_iterator_t it = esp_partition_find(ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY, NULL);
@@ -334,6 +351,7 @@ void setup() {
     digitalWrite(detected, HIGH);
     pinMode(wifi_led, OUTPUT);
     digitalWrite(wifi_led, HIGH);
+    pinMode(INFRARED_PIN, INPUT); // Configura GPIO1 come input per il sensore infrarosso
 
     xTaskCreatePinnedToCore(wifi_task, "WiFi_Task", 4096, NULL, 1, NULL, 0);
 

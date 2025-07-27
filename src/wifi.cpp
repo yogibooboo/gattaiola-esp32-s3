@@ -18,12 +18,10 @@ void wifi_task(void *pvParameters) {
                 Serial.println("Wi-Fi: Tentativo di connessione...");
             }
 
-
             /*WiFi.disconnect(true, true);
             delay(500);
             WiFi.mode(WIFI_OFF);
             delay(500); */
-
 
            /* WiFi.disconnect(true);
             WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE, INADDR_NONE);
@@ -289,15 +287,15 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
         client->text(json);
         Serial.printf("[%s] Log iniziale inviato al client ID %u\n", time_str, client->id());
 
-    // Invia la modalità corrente della porta al client
-    String mode_str;
-    portENTER_CRITICAL(&doorModeMux);
-    if (door_mode == ALWAYS_OPEN) mode_str = "ALWAYS_OPEN";
-    else if (door_mode == ALWAYS_CLOSED) mode_str = "ALWAYS_CLOSED";
-    else mode_str = "AUTO";
-    portEXIT_CRITICAL(&doorModeMux);
-    client->text("door_mode:" + mode_str);
-    Serial.printf("[%s] Inviato stato modalità iniziale al client ID %u: %s\n", time_str, client->id(), mode_str.c_str());
+        // Invia la modalità corrente della porta al client
+        String mode_str;
+        portENTER_CRITICAL(&doorModeMux);
+        if (door_mode == ALWAYS_OPEN) mode_str = "ALWAYS_OPEN";
+        else if (door_mode == ALWAYS_CLOSED) mode_str = "ALWAYS_CLOSED";
+        else mode_str = "AUTO";
+        portEXIT_CRITICAL(&doorModeMux);
+        client->text("door_mode:" + mode_str);
+        Serial.printf("[%s] Inviato stato modalità iniziale al client ID %u: %s\n", time_str, client->id(), mode_str.c_str());
 
     } else if (type == WS_EVT_DISCONNECT) {
         Serial.printf("[%s] Client WebSocket disconnesso, ID: %u\n", time_str, client->id());
@@ -327,6 +325,29 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
                 Serial.printf("[%s] Buffer inviato al client ID %u\n", time_str, client->id());
                 // Esegui analisi dopo l'invio
                 analyze_buffer_32(temp_buffer, 10000);
+            } else if (message == "get_encoder_buffer") {
+                Serial.printf("[%s] Inizio acquisizione encoder_buffer per client ID %u\n", time_str, client->id());
+                uint32_t current_index = encoder_buffer_index;
+                uint32_t start_index = (current_index - ENCODER_BUFFER_SIZE + ENCODER_BUFFER_SIZE) % ENCODER_BUFFER_SIZE;
+                if (start_index + ENCODER_BUFFER_SIZE <= ENCODER_BUFFER_SIZE) {
+                    memcpy(temp_buffer, &encoder_buffer[start_index], ENCODER_BUFFER_SIZE * sizeof(EncoderData));
+                } else {
+                    uint32_t first_chunk_size = ENCODER_BUFFER_SIZE - start_index;
+                    uint32_t second_chunk_size = ENCODER_BUFFER_SIZE - first_chunk_size;
+                    memcpy(temp_buffer, &encoder_buffer[start_index], first_chunk_size * sizeof(EncoderData));
+                    memcpy(&temp_buffer[first_chunk_size], encoder_buffer, second_chunk_size * sizeof(EncoderData));
+                }
+                // Invia il buffer binario
+                client->binary((uint8_t*)temp_buffer, ENCODER_BUFFER_SIZE * sizeof(EncoderData));
+                Serial.printf("[%s] encoder_buffer inviato al client ID %u\n", time_str, client->id());
+                // Invia il timestamp e magnitude come JSON
+                DynamicJsonDocument doc(256);
+                doc["encoder_timestamp"] = last_encoder_timestamp;
+                doc["magnitude"] = lastMagnitude;
+                String json;
+                serializeJson(doc, json);
+                client->text(json);
+                Serial.printf("[%s] Timestamp e magnitude inviati al client ID %u\n", time_str, client->id());
             } else if (message == "get_door_mode") {
                 String mode_str;
                 portENTER_CRITICAL(&doorModeMux);

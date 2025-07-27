@@ -8,6 +8,7 @@
 #include <ArduinoJson.h>
 #include <time.h>
 #include "core1.h"
+#include <AS5600.h>
 
 // Strutture dati
 #define MAX_CATS 20
@@ -26,6 +27,15 @@ struct LogEntry {
     uint16_t country_code;
     uint64_t device_code;
     bool authorized;
+};
+
+#define ENCODER_BUFFER_SIZE (1 << 14) // 2^14 = 16384
+struct EncoderData {
+    uint16_t rawAngle : 12; // Bit 0-11
+    uint8_t infrared : 1;   // Bit 12
+    uint8_t detect : 1;     // Bit 13
+    uint8_t door_open : 1;  // Bit 14
+    uint8_t padding : 1;    // Bit 15 (per allineamento a 16 bit)
 };
 
 // Enum per door_mode
@@ -48,7 +58,8 @@ enum MotorType { STEP, SERVO };
 #define STEP_A_MINUS 16
 #define STEP_B_PLUS 12
 #define STEP_B_MINUS 13
-#define ENABLE_PIN 9
+#define ENABLE_PIN 37
+#define INFRARED_PIN 1 // Pin per il sensore infrarosso
 
 // Costanti per ADC
 #define ADC_CHANNEL 3   //era 0
@@ -57,6 +68,11 @@ enum MotorType { STEP, SERVO };
 #define SERVO_PWM_FREQ 50
 #define SERVO_PWM_CHANNEL LEDC_CHANNEL_0 // Canale LEDC per PWM del servomotore
 #define SERVO_PWM_RESOLUTION 14 // Risoluzione massima 14 bit per 50 Hz su ESP32-S3
+
+// Costanti per RMT
+#define RMT_CHANNEL RMT_CHANNEL_0
+#define RMT_CLK_DIV 1
+#define RMT_TICK_1_US (80000000 / RMT_CLK_DIV / 1000000)
 
 // Variabili globali definite in main.cpp
 extern const char *ssid;
@@ -84,7 +100,7 @@ extern unsigned long last_millis;
 extern time_t local_time;
 extern volatile DoorMode door_mode;
 extern portMUX_TYPE doorModeMux;
-extern uint16_t temp_buffer[10000];
+extern uint16_t temp_buffer[16384]; // Ridimensionato per encoder_buffer (16384 campioni)
 extern uint32_t contaporta;
 extern volatile bool door_open;
 extern volatile uint32_t door_sync_count;
@@ -100,6 +116,12 @@ extern volatile MotorType motor_type;
 extern uint32_t servo_open_us;
 extern uint32_t servo_closed_us;
 extern uint32_t servo_transition_ms;
+extern EncoderData encoder_buffer[ENCODER_BUFFER_SIZE];
+extern size_t encoder_buffer_index;
+extern volatile uint16_t lastRawAngle;
+extern volatile uint16_t lastMagnitude;
+extern volatile uint32_t last_encoder_timestamp; // Timestamp UNIX dell'ultimo campione
+extern AS5600 encoder;
 
 // Funzioni definite in wifi.cpp
 void wifi_task(void *pvParameters);

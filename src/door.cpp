@@ -118,6 +118,9 @@ void door_task(void *pvParameters) {
     bool log_emitted = false;
     unsigned long last_unauthorized_log = 0;
     DoorMode last_mode = AUTO;
+    TickType_t last_wake_time = xTaskGetTickCount();
+    const TickType_t interval = 100 / portTICK_PERIOD_MS;
+    bool detect = false; // Inizializza detect
 
     portENTER_CRITICAL(&doorModeMux);
     DoorMode initial_mode = door_mode;
@@ -206,8 +209,10 @@ void door_task(void *pvParameters) {
             continue;
         }*/    //2207
 
+        detect = false;
         if (door_sync_count > 0) {
             digitalWrite(detected, LOW);
+            detect = true;
             bool is_authorized = false;
             String cat_name = "Sconosciuto";
             uint16_t country_code = last_country_code;
@@ -248,7 +253,6 @@ void door_task(void *pvParameters) {
                     if (motor_type == STEP) startMotor(true);
                     else setServoPosition(true);
                 }
-
             } else {
                 if (millis() - last_unauthorized_log >= UNAUTHORIZED_LOG_INTERVAL) {
                     if (cat_name != "Sconosciuto") {
@@ -294,6 +298,23 @@ void door_task(void *pvParameters) {
                 }
             }
         }
-        vTaskDelay(100 / portTICK_PERIOD_MS);
+
+        // Leggi encoder e infrared alla fine del ciclo
+        uint16_t rawAngle = encoder.readAngle();
+        uint16_t magnitude = encoder.readMagnitude();
+        bool infrared = digitalRead(INFRARED_PIN);
+        if (rawAngle == 0xFFFF) {
+            rawAngle = 0x3FFF; // Gestione errore
+        }
+        encoder_buffer[encoder_buffer_index].rawAngle = rawAngle;
+        encoder_buffer[encoder_buffer_index].infrared = infrared;
+        encoder_buffer[encoder_buffer_index].detect = detect;
+        encoder_buffer[encoder_buffer_index].door_open = door_open;
+        encoder_buffer_index = (encoder_buffer_index + 1) % ENCODER_BUFFER_SIZE;
+        lastRawAngle = rawAngle;
+        lastMagnitude = magnitude;
+        last_encoder_timestamp = local_time + (millis() - last_millis) / 1000;
+
+        vTaskDelayUntil(&last_wake_time, interval);
     }
 }
