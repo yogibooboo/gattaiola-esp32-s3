@@ -327,8 +327,11 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
                 analyze_buffer_32(temp_buffer, 10000);
             } else if (message == "get_encoder_buffer") {
                 Serial.printf("[%s] Inizio acquisizione encoder_buffer per client ID %u\n", time_str, client->id());
+                Serial.printf("[%s] Memoria libera prima di inviare encoder_buffer: %u bytes\n", time_str, ESP.getFreeHeap());
+                uint32_t start_time = millis();
                 uint32_t current_index = encoder_buffer_index;
                 uint32_t start_index = (current_index - ENCODER_BUFFER_SIZE + ENCODER_BUFFER_SIZE) % ENCODER_BUFFER_SIZE;
+                Serial.printf("[%s] Copia buffer: current_index=%u, start_index=%u\n", time_str, current_index, start_index);
                 if (start_index + ENCODER_BUFFER_SIZE <= ENCODER_BUFFER_SIZE) {
                     memcpy(temp_buffer, &encoder_buffer[start_index], ENCODER_BUFFER_SIZE * sizeof(EncoderData));
                 } else {
@@ -337,17 +340,18 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
                     memcpy(temp_buffer, &encoder_buffer[start_index], first_chunk_size * sizeof(EncoderData));
                     memcpy(&temp_buffer[first_chunk_size], encoder_buffer, second_chunk_size * sizeof(EncoderData));
                 }
-                // Invia il buffer binario
+                Serial.printf("[%s] Buffer copiato, invio binario (%u byte)\n", time_str, ENCODER_BUFFER_SIZE * sizeof(EncoderData));
                 client->binary((uint8_t*)temp_buffer, ENCODER_BUFFER_SIZE * sizeof(EncoderData));
-                Serial.printf("[%s] encoder_buffer inviato al client ID %u\n", time_str, client->id());
-                // Invia il timestamp e magnitude come JSON
+                Serial.printf("[%s] encoder_buffer inviato al client ID %u in %u ms\n", time_str, client->id(), millis() - start_time);
                 DynamicJsonDocument doc(256);
                 doc["encoder_timestamp"] = last_encoder_timestamp;
                 doc["magnitude"] = lastMagnitude;
                 String json;
                 serializeJson(doc, json);
+                Serial.printf("[%s] Invio JSON: %s\n", time_str, json.c_str());
                 client->text(json);
                 Serial.printf("[%s] Timestamp e magnitude inviati al client ID %u\n", time_str, client->id());
+
             } else if (message == "get_door_mode") {
                 String mode_str;
                 portENTER_CRITICAL(&doorModeMux);

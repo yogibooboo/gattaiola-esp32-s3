@@ -30,13 +30,15 @@ struct LogEntry {
 };
 
 #define ENCODER_BUFFER_SIZE (1 << 14) // 2^14 = 16384
+
 struct EncoderData {
-    uint16_t rawAngle : 12; // Bit 0-11
-    uint8_t infrared : 1;   // Bit 12
-    uint8_t detect : 1;     // Bit 13
-    uint8_t door_open : 1;  // Bit 14
-    uint8_t padding : 1;    // Bit 15 (per allineamento a 16 bit)
+    uint8_t infrared : 1;   // Bit 0
+    uint8_t detect : 1;     // Bit 1
+    uint8_t door_open : 1;  // Bit 2
+    uint8_t padding : 1;    // Bit 3
+    uint16_t rawAngle : 12; // Bit 4-15
 };
+
 
 // Enum per door_mode
 enum DoorMode { AUTO, ALWAYS_OPEN, ALWAYS_CLOSED };
