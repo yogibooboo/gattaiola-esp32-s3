@@ -204,11 +204,6 @@ void door_task(void *pvParameters) {
             last_mode = current_mode;
         }
 
-        /*if (current_mode == ALWAYS_OPEN || current_mode == ALWAYS_CLOSED) {
-            vTaskDelay(100 / portTICK_PERIOD_MS);
-            continue;
-        }*/    //2207
-
         detect = false;
         if (door_sync_count > 0) {
             digitalWrite(detected, LOW);
@@ -228,19 +223,6 @@ void door_task(void *pvParameters) {
             }
 
             if (is_authorized) {
-                /* if (!door_open && !log_emitted) {
-                    digitalWrite(ledrosso, APERTO);
-                    door_open = true;
-                    door_timer_start = xTaskGetTickCount();
-                    if (motor_type == STEP) startMotor(true);
-                    else setServoPosition(true);
-                    Serial.printf("[%s] Rilevato gatto: %s, Autorizzato: Sì\n", time_str, cat_name.c_str());
-                    add_log_entry(timestamp_full, "Autorizzato", cat_name, country_code, device_code, true);
-                    log_emitted = true;
-                } else if (door_open) {
-                    door_timer_start = xTaskGetTickCount();
-                } */  //2207
-
                 door_timer_start = xTaskGetTickCount();
                 if (!log_emitted) {
                     Serial.printf("[%s] Rilevato gatto: %s, Autorizzato: Sì\n", time_str, cat_name.c_str());
@@ -282,7 +264,7 @@ void door_task(void *pvParameters) {
                 log_emitted = true;
             } else if (door_open) {
                 TickType_t now_ticks = xTaskGetTickCount();
-                if (contaporta!=50000){
+                if (contaporta != 50000) {
                     contaporta = (now_ticks - door_timer_start);
                     if ((now_ticks - door_timer_start) >= DOOR_TIMEOUT) {
                         contaporta = 50000;
@@ -306,6 +288,28 @@ void door_task(void *pvParameters) {
         if (rawAngle == 0xFFFF) {
             rawAngle = 0x3FFF; // Gestione errore
         }
+
+        // Calcolo di correctedAngle
+        uint16_t correctedAngle;
+        if (rawAngle == door_rest) {
+            correctedAngle = 2000;
+        } else if (rawAngle >= door_rest) {
+            if (door_out != door_rest) {
+                int32_t temp = 2000 + (1000 * (int32_t)(rawAngle - door_rest)) / (int32_t)(door_out - door_rest);
+                correctedAngle = (uint16_t)temp;
+            } else {
+                correctedAngle = 2000; // Evita divisione per zero
+            }
+        } else {
+            if (door_rest != door_in) {
+                int32_t temp = 1000 + (1000 * (int32_t)(rawAngle - door_in)) / (int32_t)(door_rest - door_in);
+                correctedAngle = (uint16_t)temp;
+            } else {
+                correctedAngle = 2000; // Evita divisione per zero
+            }
+        }
+        lastCorrectedAngle = correctedAngle;
+
         encoder_buffer[encoder_buffer_index].rawAngle = rawAngle;
         encoder_buffer[encoder_buffer_index].infrared = infrared;
         encoder_buffer[encoder_buffer_index].detect = detect;

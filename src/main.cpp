@@ -63,6 +63,7 @@ EncoderData encoder_buffer[ENCODER_BUFFER_SIZE] = {0};
 size_t encoder_buffer_index = 0;
 volatile uint16_t lastRawAngle = 0;
 volatile uint16_t lastMagnitude = 0;
+volatile uint16_t lastCorrectedAngle = 0; // Nuova variabile
 AS5600 encoder;
 volatile bool debug_stream_enabled = false;
 portMUX_TYPE debugMux = portMUX_INITIALIZER_UNLOCKED;
@@ -360,20 +361,20 @@ void print_task(void *pvParameters) {
         }
         if (as5600_connected) {
             logDebug("[%s] Sync: %u, OK: %u, Last Seq: [%02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X], "
-                     "DC: %llu, CC: %u, diff: %u, freq: %u, a_s: %ld, contap: %u, rawAngle: %u, magnitude: %u\n",
+                     "DC: %llu, CC: %u, diff: %u, freq: %u, a_s: %ld, contap: %u, Angle: %u/%u, mag: %u\n",
                      time_str, sync_count, display_sync_count,
                      last_sequence[0], last_sequence[1], last_sequence[2], last_sequence[3],
                      last_sequence[4], last_sequence[5], last_sequence[6], last_sequence[7],
                      last_sequence[8], last_sequence[9],
-                     (unsigned long long)last_device_code, (long)last_country_code, (i_interrupt-ia), freq, (long)available_samples, contaporta, lastRawAngle, lastMagnitude);
+                     (unsigned long long)last_device_code, (long)last_country_code, (i_interrupt-ia), freq, (long)available_samples, contaporta, lastRawAngle, lastCorrectedAngle, lastMagnitude);
         } else {
             logDebug("[%s] Sync: %u, OK: %u, Last Seq: [%02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X], "
-                     "DC: %llu, CC: %u, diff: %u, freq: %u, a_s: %ld, contap: %u, rawAngle: N/A, magnitude: N/A\n",
+                     "DC: %llu, CC: %u, diff: %u, freq: %u, a_s: %ld, contap: %u, rawAngle: N/A, correctedAngle: %u, magnitude: N/A\n",
                      time_str, sync_count, display_sync_count,
                      last_sequence[0], last_sequence[1], last_sequence[2], last_sequence[3],
                      last_sequence[4], last_sequence[5], last_sequence[6], last_sequence[7],
                      last_sequence[8], last_sequence[9],
-                     (unsigned long long)last_device_code, (long)last_country_code, (i_interrupt-ia), freq, (long)available_samples, contaporta);
+                     (unsigned long long)last_device_code, (long)last_country_code, (i_interrupt-ia), freq, (long)available_samples, contaporta, lastCorrectedAngle);
         }
         sync_count = 0;
         display_sync_count = 0;
@@ -430,7 +431,7 @@ void setup() {
 
     xTaskCreatePinnedToCore(wifi_task, "WiFi_Task", 4096, NULL, 1, NULL, 0);
     xTaskCreatePinnedToCore(door_task, "Door_Task", 4096, NULL, 2, NULL, 0);
-    xTaskCreatePinnedToCore(print_task, "Print_Task", 4096, NULL, 1, NULL, 0); // non Spostato su Core 1
+    xTaskCreatePinnedToCore(print_task, "Print_Task", 4096, NULL, 1, NULL, 0);
 
     setupRMT();
 

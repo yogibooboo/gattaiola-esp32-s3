@@ -139,6 +139,7 @@ extern uint32_t config_10;
 extern uint32_t door_rest;
 extern uint32_t door_in;
 extern uint32_t door_out;
+extern volatile uint16_t lastCorrectedAngle; // Nuova variabile
 
 // Funzioni definite in wifi.cpp
 void wifi_task(void *pvParameters);
