@@ -5,7 +5,7 @@
 void wifi_task(void *pvParameters) {
     bool server_started = false;
     unsigned long last_ntp_attempt = 0;
-    unsigned long last_memory_update = 0; // Per aggiornare la memoria
+    unsigned long last_memory_update = 0;
     const unsigned long ntp_retry_interval = 300000; // 5 minuti
     const unsigned long memory_update_interval = 5000; // 5 secondi
 
@@ -39,8 +39,37 @@ void wifi_task(void *pvParameters) {
                 tzset();
 
                 if (!server_started) {
+                    // Configurazione dei callback di ElegantOTA per versione 3.1.5
+                    ElegantOTA.onStart([]() {
+                        Serial.println("OTA Start");
+                        Serial.println("Chiusura SPIFFS prima dell'aggiornamento");
+                        SPIFFS.end(); // Chiudi SPIFFS prima di qualsiasi aggiornamento
+                    });
+
+                    ElegantOTA.onEnd([](bool success) {
+                        if (success) {
+                            Serial.println("OTA completato con successo");
+                            Serial.println("Reinizializzazione SPIFFS");
+                            if (SPIFFS.begin(true)) {
+                                Serial.println("SPIFFS reinizializzato con successo");
+                                // Verifica file caricati
+                                File root = SPIFFS.open("/");
+                                File file = root.openNextFile();
+                                while (file) {
+                                    Serial.printf("File SPIFFS: %s, Dimensione: %u\n", file.name(), file.size());
+                                    file = root.openNextFile();
+                                }
+                            } else {
+                                Serial.println("Errore: reinizializzazione SPIFFS fallita");
+                            }
+                        } else {
+                            Serial.println("Errore OTA");
+                        }
+                    });
+
                     ElegantOTA.begin(&server);
                     Serial.println("Server WebSocket e OTA avviato. Visita http://<IP>/update per OTA.");
+
                     server.on("/config", HTTP_GET, [](AsyncWebServerRequest *request) {
                         request->send(SPIFFS, "/config.html", "text/html");
                     });
@@ -212,6 +241,52 @@ void wifi_task(void *pvParameters) {
                         request->send(200, "application/json", "{\"success\":true}");
                         vTaskDelay(100 / portTICK_PERIOD_MS);
                         ESP.restart();
+                    });
+                    // Endpoint di test per SPIFFS
+                    server.on("/test_spiffs", HTTP_POST, [](AsyncWebServerRequest *request) {}, 
+                        nullptr,
+                        [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+                            static File testFile;
+                            if (index == 0) {
+                                Serial.println("Inizio upload file di test su SPIFFS");
+                                testFile = SPIFFS.open("/test.txt", "w");
+                                if (!testFile) {
+                                    Serial.println("Errore: impossibile aprire /test.txt per scrittura");
+                                    request->send(500, "text/plain", "Errore apertura file");
+                                    return;
+                                }
+                            }
+                            if (testFile.write(data, len) != len) {
+                                Serial.println("Errore scrittura su /test.txt");
+                                testFile.close();
+                                request->send(500, "text/plain", "Errore scrittura file");
+                                return;
+                            }
+                            if (index + len == total) {
+                                testFile.close();
+                                Serial.println("Upload file di test completato");
+                                // Verifica file
+                                File verifyFile = SPIFFS.open("/test.txt", "r");
+                                if (verifyFile) {
+                                    Serial.printf("File /test.txt caricato, dimensione: %u bytes\n", verifyFile.size());
+                                    verifyFile.close();
+                                    request->send(200, "text/plain", "File caricato con successo");
+                                } else {
+                                    Serial.println("Errore: impossibile leggere /test.txt dopo l'upload");
+                                    request->send(500, "text/plain", "Errore verifica file");
+                                }
+                            }
+                        });
+                    // Endpoint per elencare i file SPIFFS
+                    server.on("/list_spiffs", HTTP_GET, [](AsyncWebServerRequest *request) {
+                        String response = "File nello SPIFFS:\n";
+                        File root = SPIFFS.open("/");
+                        File file = root.openNextFile();
+                        while (file) {
+                            response += String(file.name()) + " (" + file.size() + " bytes)\n";
+                            file = root.openNextFile();
+                        }
+                        request->send(200, "text/plain", response);
                     });
                     server.begin();
                     server_started = true;
