@@ -39,7 +39,6 @@ struct EncoderData {
     uint16_t rawAngle : 12; // Bit 4-15
 };
 
-
 // Enum per door_mode
 enum DoorMode { AUTO, ALWAYS_OPEN, ALWAYS_CLOSED };
 
@@ -49,9 +48,8 @@ enum MotorType { STEP, SERVO };
 // Costanti per i pin
 #define PWM_PIN 14
 #define PWM_FREQ 134200
-#define pblue 39     //0707 2
-//#define expblue 39    //0707
-#define ledrosso 7    //era 20
+#define pblue 39
+#define ledrosso 7
 #define APERTO LOW
 #define CHIUSO HIGH
 #define detected 15
@@ -61,15 +59,15 @@ enum MotorType { STEP, SERVO };
 #define STEP_B_PLUS 12
 #define STEP_B_MINUS 13
 #define ENABLE_PIN 37
-#define INFRARED_PIN 1 // Pin per il sensore infrarosso
+#define INFRARED_PIN 1
 
 // Costanti per ADC
-#define ADC_CHANNEL 3   //era 0
+#define ADC_CHANNEL 3
 
 // Costanti per servomotore
 #define SERVO_PWM_FREQ 50
-#define SERVO_PWM_CHANNEL LEDC_CHANNEL_0 // Canale LEDC per PWM del servomotore
-#define SERVO_PWM_RESOLUTION 14 // Risoluzione massima 14 bit per 50 Hz su ESP32-S3
+#define SERVO_PWM_CHANNEL LEDC_CHANNEL_0
+#define SERVO_PWM_RESOLUTION 14
 
 // Costanti per RMT
 #define RMT_CHANNEL RMT_CHANNEL_0
@@ -102,7 +100,7 @@ extern unsigned long last_millis;
 extern time_t local_time;
 extern volatile DoorMode door_mode;
 extern portMUX_TYPE doorModeMux;
-extern uint16_t temp_buffer[16384]; // Ridimensionato per encoder_buffer (16384 campioni)
+extern uint16_t temp_buffer[16384];
 extern uint32_t contaporta;
 extern volatile bool door_open;
 extern volatile uint32_t door_sync_count;
@@ -122,8 +120,11 @@ extern EncoderData encoder_buffer[ENCODER_BUFFER_SIZE];
 extern size_t encoder_buffer_index;
 extern volatile uint16_t lastRawAngle;
 extern volatile uint16_t lastMagnitude;
-extern volatile uint32_t last_encoder_timestamp; // Timestamp UNIX dell'ultimo campione
+extern volatile uint32_t last_encoder_timestamp;
 extern AS5600 encoder;
+// Aggiunta per debug WebSocket
+extern volatile bool debug_stream_enabled;
+extern portMUX_TYPE debugMux;
 
 // Funzioni definite in wifi.cpp
 void wifi_task(void *pvParameters);
@@ -141,5 +142,9 @@ bool readConfig();
 void writeDefaultConfig();
 void saveConfig();
 void print_task(void *pvParameters);
+
+// Funzione di debug generica
+void logDebug(const char* format, ...);
+void logDebug(const String& message);
 
 #endif

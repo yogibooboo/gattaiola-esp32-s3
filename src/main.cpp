@@ -9,8 +9,7 @@
 // Credenziali Wi-Fi
 const char *ssid = "VodafoneRibes";
 const char *password = "scheggia2000";
-//const char *ssid = "Mi 10";
-//const char *password = "12345678";
+
 // Definizione della sequenza delle fasi per full-step
 const uint8_t stepSequence[4][4] = {
     {1, 0, 0, 1},
@@ -65,19 +64,42 @@ size_t encoder_buffer_index = 0;
 volatile uint16_t lastRawAngle = 0;
 volatile uint16_t lastMagnitude = 0;
 AS5600 encoder;
+volatile bool debug_stream_enabled = false;
+portMUX_TYPE debugMux = portMUX_INITIALIZER_UNLOCKED;
+volatile bool as5600_connected = false; // Stato AS5600
 
 // Variabili per il segnale FDX-B
 hw_timer_t *fdxTimer = NULL;
 volatile size_t fdx_bit_index = 0;
 volatile bool fdx_last_half_value = false;
 portMUX_TYPE fdxTimerMux = portMUX_INITIALIZER_UNLOCKED;
-#define FDX_B_PIN 18  // Pin GPIO per il segnale FDX-B
-#define HALF_BIT_TICKS 298  // Conteggio per mezza bit (119.2 μs con prescaler 64)
+#define FDX_B_PIN 18
+#define HALF_BIT_TICKS 298
 
-// Configurazione RMT
-#define RMT_CHANNEL RMT_CHANNEL_0
-#define RMT_CLK_DIV 1
-#define RMT_TICK_1_US (80000000 / RMT_CLK_DIV / 1000000)
+// Funzione di debug generica (formato printf)
+void logDebug(const char* format, ...) {
+    char buffer[512]; // Aumentato a 512 byte
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+    
+    // Controlla il flag senza sezione critica
+    if (debug_stream_enabled && wifi_connected) {
+        ws.textAll(String(buffer));
+    } else {
+        Serial.printf("%s", buffer);
+    }
+}
+
+// Funzione di debug generica (stringa semplice)
+void logDebug(const String& message) {
+    if (debug_stream_enabled && wifi_connected) {
+        ws.textAll(message);
+    } else {
+        Serial.println(message);
+    }
+}
 
 void setupRMT() {
     rmt_config_t config = {};
@@ -106,31 +128,21 @@ void setupRMT() {
     rmt_write_items(RMT_CHANNEL, items, 2, false);
 }
 
-// ISR per il segnale FDX-B
 void IRAM_ATTR onFdxTimer() {
     portENTER_CRITICAL_ISR(&fdxTimerMux);
-    
-    // Determina il bit corrente
     uint8_t bit = fdx_b_sequence[fdx_bit_index / 2];
-    
-    // Prima metà: opposta all'ultima metà del bit precedente
     bool first_half_value = !fdx_last_half_value;
     if (fdx_bit_index % 2 == 0) {
         digitalWrite(FDX_B_PIN, first_half_value);
     } else {
-        // Seconda metà: cambia livello solo se il bit è 0
         bool second_half_value = (bit == 0) ? !first_half_value : first_half_value;
         digitalWrite(FDX_B_PIN, second_half_value);
         fdx_last_half_value = second_half_value;
     }
-    
-    // Avanza l'indice (torna a 0 dopo 256, cioè 128 bit x 2 semionde)
     fdx_bit_index = (fdx_bit_index + 1) % 256;
-    
     portEXIT_CRITICAL_ISR(&fdxTimerMux);
 }
 
-// Funzione per leggere config.json da SPIFFS
 bool readConfig() {
     File file = SPIFFS.open("/config.json", "r");
     if (!file) {
@@ -203,7 +215,6 @@ bool readConfig() {
     return true;
 }
 
-// Funzione per scrivere config.json di default su SPIFFS
 void writeDefaultConfig() {
     File file = SPIFFS.open("/config.json", "w");
     if (!file) {
@@ -234,7 +245,6 @@ void writeDefaultConfig() {
     file.close();
 }
 
-// Funzione per salvare la configurazione aggiornata
 void saveConfig() {
     File file = SPIFFS.open("/config.json", "w");
     if (!file) {
@@ -276,7 +286,6 @@ void saveConfig() {
     file.close();
 }
 
-// Task di stampa
 void print_task(void *pvParameters) {
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t interval = 1000 / portTICK_PERIOD_MS;
@@ -293,13 +302,23 @@ void print_task(void *pvParameters) {
         } else {
             strftime(time_str, sizeof(time_str), "%H:%M:%S", localtime(&now));
         }
-        printf("[%s] Sync: %u, OK: %u, Last Seq: [%02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X], "
-               "DC: %llu, CC: %u, diff: %u, freq: %u, a_s: %ld, contap: %u, rawAngle: %u, magnitude: %u\n",
-               time_str, sync_count, display_sync_count,
-               last_sequence[0], last_sequence[1], last_sequence[2], last_sequence[3],
-               last_sequence[4], last_sequence[5], last_sequence[6], last_sequence[7],
-               last_sequence[8], last_sequence[9],
-               (unsigned long long)last_device_code, (long)last_country_code, (i_interrupt-ia), freq, (long)available_samples, contaporta, lastRawAngle, lastMagnitude);
+        if (as5600_connected) {
+            logDebug("[%s] Sync: %u, OK: %u, Last Seq: [%02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X], "
+                     "DC: %llu, CC: %u, diff: %u, freq: %u, a_s: %ld, contap: %u, rawAngle: %u, magnitude: %u\n",
+                     time_str, sync_count, display_sync_count,
+                     last_sequence[0], last_sequence[1], last_sequence[2], last_sequence[3],
+                     last_sequence[4], last_sequence[5], last_sequence[6], last_sequence[7],
+                     last_sequence[8], last_sequence[9],
+                     (unsigned long long)last_device_code, (long)last_country_code, (i_interrupt-ia), freq, (long)available_samples, contaporta, lastRawAngle, lastMagnitude);
+        } else {
+            logDebug("[%s] Sync: %u, OK: %u, Last Seq: [%02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X], "
+                     "DC: %llu, CC: %u, diff: %u, freq: %u, a_s: %ld, contap: %u, rawAngle: N/A, magnitude: N/A\n",
+                     time_str, sync_count, display_sync_count,
+                     last_sequence[0], last_sequence[1], last_sequence[2], last_sequence[3],
+                     last_sequence[4], last_sequence[5], last_sequence[6], last_sequence[7],
+                     last_sequence[8], last_sequence[9],
+                     (unsigned long long)last_device_code, (long)last_country_code, (i_interrupt-ia), freq, (long)available_samples, contaporta);
+        }
         sync_count = 0;
         display_sync_count = 0;
 
@@ -310,13 +329,14 @@ void print_task(void *pvParameters) {
 void setup() {
     Serial.begin(115200);
     delay(1000);
-      Serial.print("AS5600_LIB_VERSION: ");
-  Serial.println(AS5600_LIB_VERSION);
-    Wire.begin(8, 9); // Inizializza I2C con SDA = GPIO 8, SCL = GPIO 9
-    Wire.setClock(100000); // 100 kHz
-    Wire.setTimeout(100); // Timeout 100 ms
+    Serial.print("AS5600_LIB_VERSION: ");
+    Serial.println(AS5600_LIB_VERSION);
+    Wire.begin(8, 9);
+    Wire.setClock(100000);
+    Wire.setTimeout(100);
 
-    if (encoder.begin()) { // Verifica la connessione al sensore
+    as5600_connected = encoder.begin();
+    if (as5600_connected) {
         Serial.println("AS5600 trovato!");
     } else {
         Serial.println("AS5600 non trovato. Controlla i collegamenti!");
@@ -344,22 +364,23 @@ void setup() {
     }
 
     pinMode(pblue, INPUT_PULLUP);
-    //pinMode(expblue, INPUT);  //0707
     pinMode(ledrosso, OUTPUT);
     digitalWrite(ledrosso, CHIUSO);
     pinMode(detected, OUTPUT);
     digitalWrite(detected, HIGH);
     pinMode(wifi_led, OUTPUT);
     digitalWrite(wifi_led, HIGH);
-    pinMode(INFRARED_PIN, INPUT); // Configura GPIO1 come input per il sensore infrarosso
+    pinMode(INFRARED_PIN, INPUT);
 
     xTaskCreatePinnedToCore(wifi_task, "WiFi_Task", 4096, NULL, 1, NULL, 0);
+    xTaskCreatePinnedToCore(door_task, "Door_Task", 4096, NULL, 2, NULL, 0);
+    xTaskCreatePinnedToCore(print_task, "Print_Task", 4096, NULL, 1, NULL, 0); // non Spostato su Core 1
 
     setupRMT();
 
-    pinMode(4, INPUT); //0707 Configure GPIO4 as input
-    analogSetPinAttenuation(4, ADC_11db); //0707 Set attenuation for GPIO4 due operazioni ridondanti. lo fa già fadcinit
-    fadcInit(1, 4); //0707 era fadcInit(1, 1);
+    pinMode(4, INPUT);
+    analogSetPinAttenuation(4, ADC_11db);
+    fadcInit(1, 4);
     SENS.sar_meas1_ctrl2.sar1_en_pad = (1 << ADC_CHANNEL);
     SENS.sar_meas1_ctrl2.meas1_start_sar = 1;
 
@@ -384,14 +405,14 @@ void setup() {
     } else {
         Serial.println("Configurazione Servomotore");
         pinMode(STEP_A_PLUS, OUTPUT);
-        digitalWrite(STEP_A_PLUS, LOW); // GND
+        digitalWrite(STEP_A_PLUS, LOW);
         pinMode(STEP_A_MINUS, OUTPUT);
-        digitalWrite(STEP_A_MINUS, HIGH); // VCC
-        pinMode(STEP_B_PLUS, OUTPUT);  //pwm motore
+        digitalWrite(STEP_A_MINUS, HIGH);
+        pinMode(STEP_B_PLUS, OUTPUT);
         pinMode(STEP_B_MINUS, OUTPUT);
-        digitalWrite(STEP_B_MINUS, LOW); // Inutilizzato
+        digitalWrite(STEP_B_MINUS, LOW);
         pinMode(ENABLE_PIN, OUTPUT);
-        digitalWrite(ENABLE_PIN, HIGH); // Abilita buffer
+        digitalWrite(ENABLE_PIN, HIGH);
 
         Serial.printf("Inizializzazione LEDC: canale=%d, freq=%d Hz, risoluzione=%d bit\n", 
                       SERVO_PWM_CHANNEL, SERVO_PWM_FREQ, SERVO_PWM_RESOLUTION);
@@ -403,20 +424,17 @@ void setup() {
         ledcAttachPin(STEP_B_PLUS, SERVO_PWM_CHANNEL);
         uint32_t duty = (servo_closed_us * (1ULL << SERVO_PWM_RESOLUTION)) / 20000;
         Serial.printf("Impostazione PWM iniziale: servo_closed_us=%u us, duty=%u\n", servo_closed_us, duty);
-        ledcWrite(SERVO_PWM_CHANNEL, duty); // Inizializza in posizione chiusa
+        ledcWrite(SERVO_PWM_CHANNEL, duty);
     }
 
-    // Configurazione segnale FDX-B
     pinMode(FDX_B_PIN, OUTPUT);
     digitalWrite(FDX_B_PIN, LOW);
-    fdxTimer = timerBegin(2, 32, true); // Timer 2, prescaler 64 (1 tick = 0.8 μs)
+    fdxTimer = timerBegin(2, 32, true);
     timerAttachInterrupt(fdxTimer, &onFdxTimer, true);
     timerAlarmWrite(fdxTimer, HALF_BIT_TICKS, true);
     timerAlarmEnable(fdxTimer); 
 
     start_rfid_task();
-    xTaskCreatePinnedToCore(door_task, "Door_Task", 4096, NULL, 2, NULL, 0);
-    xTaskCreatePinnedToCore(print_task, "Print_Task", 4096, NULL, 1, NULL, 0);
 
     timerAlarmEnable(timer);
 

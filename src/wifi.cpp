@@ -5,7 +5,9 @@
 void wifi_task(void *pvParameters) {
     bool server_started = false;
     unsigned long last_ntp_attempt = 0;
-    const unsigned long ntp_retry_interval = 300000;
+    unsigned long last_memory_update = 0; // Per aggiornare la memoria
+    const unsigned long ntp_retry_interval = 300000; // 5 minuti
+    const unsigned long memory_update_interval = 5000; // 5 secondi
 
     while (true) {
         if (WiFi.status() != WL_CONNECTED) {
@@ -18,18 +20,9 @@ void wifi_task(void *pvParameters) {
                 Serial.println("Wi-Fi: Tentativo di connessione...");
             }
 
-            /*WiFi.disconnect(true, true);
-            delay(500);
-            WiFi.mode(WIFI_OFF);
-            delay(500); */
-
-           /* WiFi.disconnect(true);
-            WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE, INADDR_NONE);
-            const char* hostname = "Gattaiola"; // Nome personalizzato
-            WiFi.setHostname(hostname); */
             WiFi.begin(ssid, password);
             unsigned long start = millis();
-            while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) {  //era 5000
+            while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) {
                 vTaskDelay(100 / portTICK_PERIOD_MS);
             }
 
@@ -50,6 +43,9 @@ void wifi_task(void *pvParameters) {
                     Serial.println("Server WebSocket e OTA avviato. Visita http://<IP>/update per OTA.");
                     server.on("/config", HTTP_GET, [](AsyncWebServerRequest *request) {
                         request->send(SPIFFS, "/config.html", "text/html");
+                    });
+                    server.on("/debug", HTTP_GET, [](AsyncWebServerRequest *request) {
+                        request->send(SPIFFS, "/debug.html", "text/html");
                     });
 
                     server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
@@ -229,6 +225,12 @@ void wifi_task(void *pvParameters) {
             }
             vTaskDelay(WIFI_RECONNECT_DELAY / portTICK_PERIOD_MS);
         } else {
+            // Invio periodico della memoria libera
+            if (debug_stream_enabled && millis() - last_memory_update >= memory_update_interval) {
+                ws.textAll("memory:" + String(ESP.getFreeHeap()));
+                last_memory_update = millis();
+            }
+
             if (millis() - last_ntp_attempt >= ntp_retry_interval || last_ntp_attempt == 0) {
                 if (WIFI_VERBOSE_LOG) {
                     Serial.println("NTP: Tentativo di sincronizzazione...");
@@ -287,7 +289,6 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
         client->text(json);
         Serial.printf("[%s] Log iniziale inviato al client ID %u\n", time_str, client->id());
 
-        // Invia la modalità corrente della porta al client
         String mode_str;
         portENTER_CRITICAL(&doorModeMux);
         if (door_mode == ALWAYS_OPEN) mode_str = "ALWAYS_OPEN";
@@ -299,6 +300,8 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
 
     } else if (type == WS_EVT_DISCONNECT) {
         Serial.printf("[%s] Client WebSocket disconnesso, ID: %u\n", time_str, client->id());
+        debug_stream_enabled = false; // Disattiva debug
+        Serial.printf("[%s] Debug streaming disattivato\n", time_str);
     } else if (type == WS_EVT_DATA) {
         AwsFrameInfo *info = (AwsFrameInfo*)arg;
         if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
@@ -306,12 +309,18 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
             String message = (char*)data;
             Serial.printf("[%s] Ricevuto dal client ID %u: %s\n", time_str, client->id(), message.c_str());
 
-            if (message == "get_buffer") {
+            if (message == "start_debug") {
+                debug_stream_enabled = true;
+                Serial.printf("[%s] Debug streaming attivato per client ID %u\n", time_str, client->id());
+                client->text("Debug streaming started");
+            } else if (message == "stop_debug") {
+                debug_stream_enabled = false;
+                Serial.printf("[%s] Debug streaming disattivato per client ID %u\n", time_str, client->id());
+                client->text("Debug streaming stopped");
+            } else if (message == "get_buffer") {
                 Serial.printf("[%s] Inizio acquisizione da WebSocket per client ID %u\n", time_str, client->id());
                 uint32_t current_index = i_interrupt;
                 uint32_t start_index = (current_index - 10000 + ADC_BUFFER_SIZE) % ADC_BUFFER_SIZE;
-                // Rimuovo log di debug per ridurre ritardo
-                // Serial.printf("[%s] DEBUG: i_interrupt=%u, start_index=%u\n", time_str, current_index, start_index);
                 if (start_index + 10000 <= ADC_BUFFER_SIZE) {
                     memcpy(temp_buffer, (const void*)&adc_buffer[start_index], 10000 * sizeof(uint16_t));
                 } else {
@@ -320,10 +329,8 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
                     memcpy(temp_buffer, (const void*)&adc_buffer[start_index], first_chunk_size * sizeof(uint16_t));
                     memcpy(&temp_buffer[first_chunk_size], (const void*)adc_buffer, second_chunk_size * sizeof(uint16_t));
                 }
-                // Invia il buffer immediatamente
                 client->binary((uint8_t*)temp_buffer, 10000 * sizeof(uint16_t));
                 Serial.printf("[%s] Buffer inviato al client ID %u\n", time_str, client->id());
-                // Esegui analisi dopo l'invio
                 analyze_buffer_32(temp_buffer, 10000);
             } else if (message == "get_encoder_buffer") {
                 Serial.printf("[%s] Inizio acquisizione encoder_buffer per client ID %u\n", time_str, client->id());
@@ -351,7 +358,6 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
                 Serial.printf("[%s] Invio JSON: %s\n", time_str, json.c_str());
                 client->text(json);
                 Serial.printf("[%s] Timestamp e magnitude inviati al client ID %u\n", time_str, client->id());
-
             } else if (message == "get_door_mode") {
                 String mode_str;
                 portENTER_CRITICAL(&doorModeMux);

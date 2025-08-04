@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Log</title>
+    <style>
+        body {
+            background-color: #1e1e1e;
+            color: #ffffff;
+            font-family: 'Courier New', monospace;
+            margin: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+        #log {
+            background-color: #2d2d2d;
+            border: 2px solid #666;
+            width: 98%; /* Aumentato da 95% */
+            max-width: 1600px; /* Aumentato da 1200px */
+            height: 500px;
+            overflow-y: auto;
+            overflow-x: auto;
+            padding: 12px;
+            font-size: 13px; /* Ridotto da 12px a 10px (circa 15% in meno) */
+            white-space: pre-wrap; /* Consente il wrap */
+            word-wrap: break-word; /* Spezza parole lunghe */
+        }
+        #diagnostics {
+            background-color: #2d2d2d;
+            border: 2px solid #666;
+            width: 98%;
+            max-width: 1600px;
+            padding: 12px;
+            margin-top: 20px;
+            font-size: 13px; /* Ridotto per coerenza */
+        }
+        #saveButton {
+            margin-top: 20px;
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        #saveButton:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <h1>Debug Log</h1>
+    <div id="log"></div>
+    <div id="diagnostics">Memoria libera: N/A</div>
+    <button id="saveButton" onclick="saveLog()">Salva Log</button>
+    <script>
+        let ws;
+        let logContent = '';
+        const logDiv = document.getElementById('log');
+        const diagnosticsDiv = document.getElementById('diagnostics');
+
+        function connectWebSocket() {
+            ws = new WebSocket('ws://' + window.location.hostname + '/ws');
+            ws.onopen = function() {
+                console.log('WebSocket connesso');
+                ws.send('start_debug');
+            };
+            ws.onmessage = function(event) {
+                const data = event.data;
+                if (data.startsWith('memory:')) {
+                    diagnosticsDiv.textContent = 'Memoria libera: ' + data.substring(7) + ' bytes';
+                } else {
+                    logContent += data; /* Rimuovo '\n' per evitare doppio salto di linea */
+                    logDiv.textContent = logContent;
+                    logDiv.scrollTop = logDiv.scrollHeight; /* Scorri automaticamente in basso */
+                }
+            };
+            ws.onclose = function() {
+                console.log('WebSocket disconnesso');
+                if (ws) ws.send('stop_debug');
+                setTimeout(connectWebSocket, 5000); /* Riprova dopo 5 secondi */
+            };
+            ws.onerror = function(error) {
+                console.error('Errore WebSocket:', error);
+            };
+        }
+
+        function saveLog() {
+            const blob = new Blob([logContent], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const now = new Date();
+            const timestamp = now.toISOString().replace(/:/g, '-').split('.')[0];
+            a.download = `debug_log_${timestamp}.txt`;
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+
+        window.onload = connectWebSocket;
+        window.onbeforeunload = function() {
+            if (ws) ws.send('stop_debug');
+        };
+    </script>
+</body>
+</html>
