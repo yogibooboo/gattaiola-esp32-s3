@@ -50,6 +50,8 @@
         }
         .form-group {
             margin-bottom: 15px;
+            display: flex;
+            align-items: center;
         }
         label {
             display: inline-block;
@@ -89,6 +91,10 @@
             label, input, select {
                 width: 100%;
                 box-sizing: border-box;
+            }
+            .form-group {
+                flex-direction: column;
+                align-items: flex-start;
             }
         }
     </style>
@@ -174,6 +180,61 @@
                     <input type="number" id="servoTransitionMs" placeholder="500">
                 </div>
             </div>
+            <div class="sub-section">
+                <h3>Parametri Aggiuntivi</h3>
+                <div class="form-group">
+                    <label for="config_01">Configurazione 01:</label>
+                    <input type="number" id="config_01" min="0">
+                </div>
+                <div class="form-group">
+                    <label for="config_02">Configurazione 02:</label>
+                    <input type="number" id="config_02" min="0">
+                </div>
+                <div class="form-group">
+                    <label for="config_03">Configurazione 03:</label>
+                    <input type="number" id="config_03" min="0">
+                </div>
+                <div class="form-group">
+                    <label for="config_04">Configurazione 04:</label>
+                    <input type="number" id="config_04" min="0">
+                </div>
+                <div class="form-group">
+                    <label for="config_05">Configurazione 05:</label>
+                    <input type="number" id="config_05" min="0">
+                </div>
+                <div class="form-group">
+                    <label for="config_06">Configurazione 06:</label>
+                    <input type="number" id="config_06" min="0">
+                </div>
+                <div class="form-group">
+                    <label for="config_07">Configurazione 07:</label>
+                    <input type="number" id="config_07" min="0">
+                </div>
+                <div class="form-group">
+                    <label for="config_08">Configurazione 08:</label>
+                    <input type="number" id="config_08" min="0">
+                </div>
+                <div class="form-group">
+                    <label for="config_09">Configurazione 09:</label>
+                    <input type="number" id="config_09" min="0">
+                </div>
+                <div class="form-group">
+                    <label for="config_10">Configurazione 10:</label>
+                    <input type="number" id="config_10" min="0">
+                </div>
+                <div class="form-group">
+                    <label for="door_rest">Door Rest:</label>
+                    <input type="number" id="door_rest" min="0">
+                </div>
+                <div class="form-group">
+                    <label for="door_in">Door In:</label>
+                    <input type="number" id="door_in" min="0">
+                </div>
+                <div class="form-group">
+                    <label for="door_out">Door Out:</label>
+                    <input type="number" id="door_out" min="0">
+                </div>
+            </div>
             <div class="form-group">
                 <label for="wifiVerboseLog">Log Wi-Fi Dettagliato:</label>
                 <input type="checkbox" id="wifiVerboseLog">
@@ -211,6 +272,20 @@
                 document.getElementById('servoOpenUs').value = data.servo_open_us;
                 document.getElementById('servoClosedUs').value = data.servo_closed_us;
                 document.getElementById('servoTransitionMs').value = data.servo_transition_ms;
+                // Nuovi parametri
+                document.getElementById('config_01').value = data.config_01;
+                document.getElementById('config_02').value = data.config_02;
+                document.getElementById('config_03').value = data.config_03;
+                document.getElementById('config_04').value = data.config_04;
+                document.getElementById('config_05').value = data.config_05;
+                document.getElementById('config_06').value = data.config_06;
+                document.getElementById('config_07').value = data.config_07;
+                document.getElementById('config_08').value = data.config_08;
+                document.getElementById('config_09').value = data.config_09;
+                document.getElementById('config_10').value = data.config_10;
+                document.getElementById('door_rest').value = data.door_rest;
+                document.getElementById('door_in').value = data.door_in;
+                document.getElementById('door_out').value = data.door_out;
                 showFeedback("Configurazione caricata");
             } catch (error) {
                 showFeedback("Errore caricamento configurazione: " + error.message);
@@ -332,7 +407,21 @@
                 motor_type: document.getElementById('motorType').value,
                 servo_open_us: parseInt(document.getElementById('servoOpenUs').value),
                 servo_closed_us: parseInt(document.getElementById('servoClosedUs').value),
-                servo_transition_ms: parseInt(document.getElementById('servoTransitionMs').value)
+                servo_transition_ms: parseInt(document.getElementById('servoTransitionMs').value),
+                // Nuovi parametri
+                config_01: parseInt(document.getElementById('config_01').value),
+                config_02: parseInt(document.getElementById('config_02').value),
+                config_03: parseInt(document.getElementById('config_03').value),
+                config_04: parseInt(document.getElementById('config_04').value),
+                config_05: parseInt(document.getElementById('config_05').value),
+                config_06: parseInt(document.getElementById('config_06').value),
+                config_07: parseInt(document.getElementById('config_07').value),
+                config_08: parseInt(document.getElementById('config_08').value),
+                config_09: parseInt(document.getElementById('config_09').value),
+                config_10: parseInt(document.getElementById('config_10').value),
+                door_rest: parseInt(document.getElementById('door_rest').value),
+                door_in: parseInt(document.getElementById('door_in').value),
+                door_out: parseInt(document.getElementById('door_out').value)
             };
 
             if (Object.values(config).some(v => isNaN(v) && typeof v !== 'boolean' && typeof v !== 'string')) {

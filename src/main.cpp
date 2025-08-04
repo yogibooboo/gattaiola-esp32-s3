@@ -67,6 +67,20 @@ AS5600 encoder;
 volatile bool debug_stream_enabled = false;
 portMUX_TYPE debugMux = portMUX_INITIALIZER_UNLOCKED;
 volatile bool as5600_connected = false; // Stato AS5600
+// Nuovi parametri
+uint32_t config_01 = 0;
+uint32_t config_02 = 0;
+uint32_t config_03 = 0;
+uint32_t config_04 = 0;
+uint32_t config_05 = 0;
+uint32_t config_06 = 0;
+uint32_t config_07 = 0;
+uint32_t config_08 = 0;
+uint32_t config_09 = 0;
+uint32_t config_10 = 0;
+uint32_t door_rest = 0;
+uint32_t door_in = 0;
+uint32_t door_out = 0;
 
 // Variabili per il segnale FDX-B
 hw_timer_t *fdxTimer = NULL;
@@ -196,6 +210,20 @@ bool readConfig() {
     STEP_INTERVAL_US = doc["step_interval_us"] | 500;
     WIFI_VERBOSE_LOG = doc["wifi_verbose_log"] | false;
     contaporta = doc["contaporta"] | 0;
+    // Nuovi parametri
+    config_01 = doc["config_01"] | 0;
+    config_02 = doc["config_02"] | 0;
+    config_03 = doc["config_03"] | 0;
+    config_04 = doc["config_04"] | 0;
+    config_05 = doc["config_05"] | 0;
+    config_06 = doc["config_06"] | 0;
+    config_07 = doc["config_07"] | 0;
+    config_08 = doc["config_08"] | 0;
+    config_09 = doc["config_09"] | 0;
+    config_10 = doc["config_10"] | 0;
+    door_rest = doc["door_rest"] | 0;
+    door_in = doc["door_in"] | 0;
+    door_out = doc["door_out"] | 0;
 
     String mode = doc["door_mode"] | "AUTO";
     portENTER_CRITICAL(&doorModeMux);
@@ -235,6 +263,20 @@ void writeDefaultConfig() {
     doc["servo_open_us"] = 2000;
     doc["servo_closed_us"] = 1000;
     doc["servo_transition_ms"] = 500;
+    // Nuovi parametri
+    doc["config_01"] = 0;
+    doc["config_02"] = 0;
+    doc["config_03"] = 0;
+    doc["config_04"] = 0;
+    doc["config_05"] = 0;
+    doc["config_06"] = 0;
+    doc["config_07"] = 0;
+    doc["config_08"] = 0;
+    doc["config_09"] = 0;
+    doc["config_10"] = 0;
+    doc["door_rest"] = 0;
+    doc["door_in"] = 0;
+    doc["door_out"] = 0;
     JsonArray cats = doc.createNestedArray("authorized_cats");
 
     if (serializeJson(doc, file)) {
@@ -272,6 +314,20 @@ void saveConfig() {
     doc["servo_open_us"] = servo_open_us;
     doc["servo_closed_us"] = servo_closed_us;
     doc["servo_transition_ms"] = servo_transition_ms;
+    // Nuovi parametri
+    doc["config_01"] = config_01;
+    doc["config_02"] = config_02;
+    doc["config_03"] = config_03;
+    doc["config_04"] = config_04;
+    doc["config_05"] = config_05;
+    doc["config_06"] = config_06;
+    doc["config_07"] = config_07;
+    doc["config_08"] = config_08;
+    doc["config_09"] = config_09;
+    doc["config_10"] = config_10;
+    doc["door_rest"] = door_rest;
+    doc["door_in"] = door_in;
+    doc["door_out"] = door_out;
     portENTER_CRITICAL(&doorModeMux);
     if (door_mode == ALWAYS_OPEN) doc["door_mode"] = "ALWAYS_OPEN";
     else if (door_mode == ALWAYS_CLOSED) doc["door_mode"] = "ALWAYS_CLOSED";

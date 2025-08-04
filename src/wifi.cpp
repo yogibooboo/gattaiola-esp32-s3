@@ -102,6 +102,20 @@ void wifi_task(void *pvParameters) {
                         doc["servo_open_us"] = servo_open_us;
                         doc["servo_closed_us"] = servo_closed_us;
                         doc["servo_transition_ms"] = servo_transition_ms;
+                        // Nuovi parametri
+                        doc["config_01"] = config_01;
+                        doc["config_02"] = config_02;
+                        doc["config_03"] = config_03;
+                        doc["config_04"] = config_04;
+                        doc["config_05"] = config_05;
+                        doc["config_06"] = config_06;
+                        doc["config_07"] = config_07;
+                        doc["config_08"] = config_08;
+                        doc["config_09"] = config_09;
+                        doc["config_10"] = config_10;
+                        doc["door_rest"] = door_rest;
+                        doc["door_in"] = door_in;
+                        doc["door_out"] = door_out;
                         String json;
                         serializeJson(doc, json);
                         request->send(200, "application/json", json);
@@ -195,6 +209,20 @@ void wifi_task(void *pvParameters) {
                                         servo_open_us = 2000;
                                         servo_closed_us = 1000;
                                         servo_transition_ms = 500;
+                                        // Nuovi parametri
+                                        config_01 = 0;
+                                        config_02 = 0;
+                                        config_03 = 0;
+                                        config_04 = 0;
+                                        config_05 = 0;
+                                        config_06 = 0;
+                                        config_07 = 0;
+                                        config_08 = 0;
+                                        config_09 = 0;
+                                        config_10 = 0;
+                                        door_rest = 0;
+                                        door_in = 0;
+                                        door_out = 0;
                                     } else {
                                         if (params.containsKey("DOOR_TIMEOUT")) DOOR_TIMEOUT = params["DOOR_TIMEOUT"].as<uint32_t>() / portTICK_PERIOD_MS;
                                         if (params.containsKey("WIFI_RECONNECT_DELAY")) WIFI_RECONNECT_DELAY = params["WIFI_RECONNECT_DELAY"].as<uint32_t>();
@@ -210,6 +238,20 @@ void wifi_task(void *pvParameters) {
                                         if (params.containsKey("servo_open_us")) servo_open_us = params["servo_open_us"].as<uint32_t>();
                                         if (params.containsKey("servo_closed_us")) servo_closed_us = params["servo_closed_us"].as<uint32_t>();
                                         if (params.containsKey("servo_transition_ms")) servo_transition_ms = params["servo_transition_ms"].as<uint32_t>();
+                                        // Nuovi parametri
+                                        if (params.containsKey("config_01")) config_01 = params["config_01"].as<uint32_t>();
+                                        if (params.containsKey("config_02")) config_02 = params["config_02"].as<uint32_t>();
+                                        if (params.containsKey("config_03")) config_03 = params["config_03"].as<uint32_t>();
+                                        if (params.containsKey("config_04")) config_04 = params["config_04"].as<uint32_t>();
+                                        if (params.containsKey("config_05")) config_05 = params["config_05"].as<uint32_t>();
+                                        if (params.containsKey("config_06")) config_06 = params["config_06"].as<uint32_t>();
+                                        if (params.containsKey("config_07")) config_07 = params["config_07"].as<uint32_t>();
+                                        if (params.containsKey("config_08")) config_08 = params["config_08"].as<uint32_t>();
+                                        if (params.containsKey("config_09")) config_09 = params["config_09"].as<uint32_t>();
+                                        if (params.containsKey("config_10")) config_10 = params["config_10"].as<uint32_t>();
+                                        if (params.containsKey("door_rest")) door_rest = params["door_rest"].as<uint32_t>();
+                                        if (params.containsKey("door_in")) door_in = params["door_in"].as<uint32_t>();
+                                        if (params.containsKey("door_out")) door_out = params["door_out"].as<uint32_t>();
                                         if (DOOR_TIMEOUT * portTICK_PERIOD_MS < 1000 || WIFI_RECONNECT_DELAY < 1000 || UNAUTHORIZED_LOG_INTERVAL < 1000) {
                                             request->send(400, "application/json", "{\"success\":false,\"error\":\"Tempi devono essere >= 1000 ms\"}");
                                             return;
@@ -359,6 +401,20 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
             entry["device_code"] = String((unsigned long long)log_buffer[idx].device_code);
             entry["authorized"] = log_buffer[idx].authorized;
         }
+        // Aggiungi i nuovi parametri al JSON
+        doc["config_01"] = config_01;
+        doc["config_02"] = config_02;
+        doc["config_03"] = config_03;
+        doc["config_04"] = config_04;
+        doc["config_05"] = config_05;
+        doc["config_06"] = config_06;
+        doc["config_07"] = config_07;
+        doc["config_08"] = config_08;
+        doc["config_09"] = config_09;
+        doc["config_10"] = config_10;
+        doc["door_rest"] = door_rest;
+        doc["door_in"] = door_in;
+        doc["door_out"] = door_out;
         String json;
         serializeJson(doc, json);
         client->text(json);
@@ -457,6 +513,20 @@ void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsE
                     entry["device_code"] = String((unsigned long long)log_buffer[idx].device_code);
                     entry["authorized"] = log_buffer[idx].authorized;
                 }
+                // Aggiungi i nuovi parametri al JSON
+                doc["config_01"] = config_01;
+                doc["config_02"] = config_02;
+                doc["config_03"] = config_03;
+                doc["config_04"] = config_04;
+                doc["config_05"] = config_05;
+                doc["config_06"] = config_06;
+                doc["config_07"] = config_07;
+                doc["config_08"] = config_08;
+                doc["config_09"] = config_09;
+                doc["config_10"] = config_10;
+                doc["door_rest"] = door_rest;
+                doc["door_in"] = door_in;
+                doc["door_out"] = door_out;
                 String json;
                 serializeJson(doc, json);
                 client->text(json);

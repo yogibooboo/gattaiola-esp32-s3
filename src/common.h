@@ -125,6 +125,20 @@ extern AS5600 encoder;
 // Aggiunta per debug WebSocket
 extern volatile bool debug_stream_enabled;
 extern portMUX_TYPE debugMux;
+// Nuovi parametri
+extern uint32_t config_01;
+extern uint32_t config_02;
+extern uint32_t config_03;
+extern uint32_t config_04;
+extern uint32_t config_05;
+extern uint32_t config_06;
+extern uint32_t config_07;
+extern uint32_t config_08;
+extern uint32_t config_09;
+extern uint32_t config_10;
+extern uint32_t door_rest;
+extern uint32_t door_in;
+extern uint32_t door_out;
 
 // Funzioni definite in wifi.cpp
 void wifi_task(void *pvParameters);
