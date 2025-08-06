@@ -88,7 +88,7 @@ hw_timer_t *fdxTimer = NULL;
 volatile size_t fdx_bit_index = 0;
 volatile bool fdx_last_half_value = false;
 portMUX_TYPE fdxTimerMux = portMUX_INITIALIZER_UNLOCKED;
-#define FDX_B_PIN 18
+
 #define HALF_BIT_TICKS 298
 
 // Funzione di debug generica (formato printf)
@@ -388,7 +388,7 @@ void setup() {
     delay(1000);
     Serial.print("AS5600_LIB_VERSION: ");
     Serial.println(AS5600_LIB_VERSION);
-    Wire.begin(8, 9);
+    Wire.begin(ENCODER_SDA, ENCODER_SCL);      
     Wire.setClock(100000);
     Wire.setTimeout(100);
 
@@ -423,6 +423,12 @@ void setup() {
     pinMode(pblue, INPUT_PULLUP);
     pinMode(ledrosso, OUTPUT);
     digitalWrite(ledrosso, CHIUSO);
+    pinMode(LEDBLUE, OUTPUT);
+    digitalWrite(LEDBLUE, HIGH);
+   
+    pinMode(INFRARED_ENABLE, OUTPUT);
+    
+    digitalWrite(INFRARED_ENABLE,HIGH);
     pinMode(detected, OUTPUT);
     digitalWrite(detected, HIGH);
     pinMode(wifi_led, OUTPUT);
@@ -486,13 +492,15 @@ void setup() {
 
     pinMode(FDX_B_PIN, OUTPUT);
     digitalWrite(FDX_B_PIN, LOW);
-    fdxTimer = timerBegin(2, 32, true);
-    timerAttachInterrupt(fdxTimer, &onFdxTimer, true);
-    timerAlarmWrite(fdxTimer, HALF_BIT_TICKS, true);
-    timerAlarmEnable(fdxTimer); 
-
+    
+    if (config_01 != 0){
+        fdxTimer = timerBegin(2, 32, true);
+        timerAttachInterrupt(fdxTimer, &onFdxTimer, true);
+        timerAlarmWrite(fdxTimer, HALF_BIT_TICKS, true);
+        timerAlarmEnable(fdxTimer); 
+    }
     start_rfid_task();
-
+    
     timerAlarmEnable(timer);
 
     last_millis = millis();

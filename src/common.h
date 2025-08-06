@@ -54,12 +54,20 @@ enum MotorType { STEP, SERVO };
 #define CHIUSO HIGH
 #define detected 15
 #define wifi_led 6
-#define STEP_A_PLUS 10
+#define STEP_A_PLUS 21
 #define STEP_A_MINUS 16
 #define STEP_B_PLUS 12
 #define STEP_B_MINUS 13
 #define ENABLE_PIN 37
-#define INFRARED_PIN 1
+
+#define FDX_B_PIN 16
+
+#define INFRARED_PIN 3    //(AUX3)
+#define INFRARED_ENABLE 8  //(AUX2) alimentazione
+#define LEDBLUE 5
+
+#define ENCODER_SDA 10
+#define ENCODER_SCL 9
 
 // Costanti per ADC
 #define ADC_CHANNEL 3

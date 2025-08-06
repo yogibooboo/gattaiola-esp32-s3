@@ -285,6 +285,8 @@ void door_task(void *pvParameters) {
         uint16_t rawAngle = encoder.readAngle();
         uint16_t magnitude = encoder.readMagnitude();
         bool infrared = digitalRead(INFRARED_PIN);
+
+        if (infrared) digitalWrite(LEDBLUE, LOW); else digitalWrite(LEDBLUE, HIGH);
         if (rawAngle == 0xFFFF) {
             rawAngle = 0x3FFF; // Gestione errore
         }
