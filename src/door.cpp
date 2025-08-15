@@ -120,7 +120,29 @@ void door_task(void *pvParameters) {
     DoorMode last_mode = AUTO;
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t interval = 100 / portTICK_PERIOD_MS;
-    bool detect = false; // Inizializza detect
+    bool detect = false;
+
+    // Inizializzazione delle variabili per l'ultimo gatto autorizzato
+    last_authorized_device_code = 0;
+    last_authorized_country_code = 0;
+
+    // Variabili statiche per l'analisi degli eventi
+    static enum { IDLE, EVENTO_ATTIVO } stato = IDLE;
+    static char timestamp_inizio[20] = "";
+    static uint32_t indice_inizio = 0;
+    static bool passaggio_confermato = false;
+    static const char* direzione = NULL;
+    static uint32_t conteggio_senza_trigger = 0;
+    static uint32_t ultimo_trigger_idx = 0;
+    static int32_t trigger_porta_idx = -1;
+    static int32_t passaggio_porta_idx = -1;
+    static int32_t detect_idx = -1;
+    static int32_t infrared_idx = -1;
+    static String cat_name_evento = "Sconosciuto";
+    static uint16_t country_code_evento = 0;
+    static uint64_t device_code_evento = 0;
+    static bool authorized_evento = false;
+    static bool codice_associato = false;
 
     portENTER_CRITICAL(&doorModeMux);
     DoorMode initial_mode = door_mode;
@@ -160,6 +182,12 @@ void door_task(void *pvParameters) {
     last_mode = initial_mode;
 
     while (true) {
+        // Dichiarazione delle variabili usate nell'analisi
+        String cat_name = "Sconosciuto";
+        bool is_authorized = false;
+        uint16_t country_code = 0;
+        uint64_t device_code = 0;
+
         time_t now = local_time + (millis() - last_millis) / 1000;
         strftime(time_str, sizeof(time_str), "%H:%M:%S", localtime(&now));
         char timestamp_full[20];
@@ -205,13 +233,14 @@ void door_task(void *pvParameters) {
         }
 
         detect = false;
+        bool newcode = false; // Flag per newcode
         if (door_sync_count > 0) {
             digitalWrite(detected, LOW);
             detect = true;
-            bool is_authorized = false;
-            String cat_name = "Sconosciuto";
-            uint16_t country_code = last_country_code;
-            uint64_t device_code = last_device_code;
+            is_authorized = false;
+            cat_name = "Sconosciuto";
+            country_code = last_country_code;
+            device_code = last_device_code;
 
             for (size_t i = 0; i < num_cats; i++) {
                 if (authorized_cats[i].device_code == last_device_code) {
@@ -222,7 +251,26 @@ void door_task(void *pvParameters) {
                 }
             }
 
+            // Gestione newcode: confronta con il codice dell'evento in corso
+            if (stato == EVENTO_ATTIVO) {
+                if (!codice_associato) {
+                    codice_associato = true;
+                    cat_name_evento = cat_name;
+                    country_code_evento = country_code;
+                    device_code_evento = device_code;
+                    authorized_evento = is_authorized;
+                } else if (device_code != device_code_evento || country_code != country_code_evento) {
+                    newcode = true;
+                }
+            }
+
+            // Gestione log e autorizzazione per gatti autorizzati
             if (is_authorized) {
+                if (last_device_code != last_authorized_device_code || country_code != last_authorized_country_code) {
+                    log_emitted = false;
+                    last_authorized_device_code = last_device_code;
+                    last_authorized_country_code = country_code;
+                }
                 door_timer_start = xTaskGetTickCount();
                 if (!log_emitted) {
                     Serial.printf("[%s] Rilevato gatto: %s, Autorizzato: Sì\n", time_str, cat_name.c_str());
@@ -284,7 +332,8 @@ void door_task(void *pvParameters) {
         // Leggi encoder e infrared alla fine del ciclo
         uint16_t rawAngle = encoder.readAngle();
         uint16_t magnitude = encoder.readMagnitude();
-        bool infrared = digitalRead(INFRARED_PIN);
+        bool infrared = digitalRead(INFRARED_PIN) || interruptFlag;  // Sente sia il livello che i fronti in interrupt
+        interruptFlag = false;
 
         if (infrared) digitalWrite(LEDBLUE, LOW); else digitalWrite(LEDBLUE, HIGH);
         if (rawAngle == 0xFFFF) {
@@ -297,25 +346,151 @@ void door_task(void *pvParameters) {
             correctedAngle = 2000;
         } else if (rawAngle >= door_rest) {
             if (door_out != door_rest) {
-                int32_t temp = 2000 + (1000 * (int32_t)(rawAngle - door_rest)) / (int32_t)(door_out - door_rest);
+                int32_t temp = 2048 + (1024 * (int32_t)(rawAngle - door_rest)) / (int32_t)(door_out - door_rest);
                 correctedAngle = (uint16_t)temp;
             } else {
-                correctedAngle = 2000; // Evita divisione per zero
+                correctedAngle = 2048; // Evita divisione per zero
             }
         } else {
             if (door_rest != door_in) {
-                int32_t temp = 1000 + (1000 * (int32_t)(rawAngle - door_in)) / (int32_t)(door_rest - door_in);
+                int32_t temp = 1024 + (1024 * (int32_t)(rawAngle - door_in)) / (int32_t)(door_rest - door_in);
                 correctedAngle = (uint16_t)temp;
             } else {
-                correctedAngle = 2000; // Evita divisione per zero
+                correctedAngle = 2048; // Evita divisione per zero
             }
         }
         lastCorrectedAngle = correctedAngle;
 
-        encoder_buffer[encoder_buffer_index].rawAngle = rawAngle;
+        // ANALISI QUI
+        // Calcolo della deviazione e del trigger
+        int32_t angolo_deviazione = abs((int32_t)correctedAngle - 2048);
+        bool trigger = (angolo_deviazione > (int32_t)config_02 || infrared || detect);
+
+        if (stato == IDLE) {
+            if (trigger) {
+                stato = EVENTO_ATTIVO;
+                strncpy(timestamp_inizio, timestamp_full, sizeof(timestamp_inizio));
+                indice_inizio = 0;
+                passaggio_confermato = false;
+                direzione = NULL;
+                conteggio_senza_trigger = 0;
+                ultimo_trigger_idx = 0;
+                trigger_porta_idx = (angolo_deviazione > (int32_t)config_02) ? 0 : -1;
+                passaggio_porta_idx = -1;
+                detect_idx = detect ? 0 : -1;
+                infrared_idx = infrared ? 0 : -1;
+                codice_associato = false;
+                if (detect) {
+                    cat_name_evento = cat_name;
+                    country_code_evento = country_code;
+                    device_code_evento = device_code;
+                    authorized_evento = is_authorized;
+                    codice_associato = true;
+                } else {
+                    cat_name_evento = "Sconosciuto";
+                    country_code_evento = 0;
+                    device_code_evento = 0;
+                    authorized_evento = false;
+                }
+                Serial.printf("Evento iniziato a %s\n", timestamp_inizio);
+            }
+        } else if (stato == EVENTO_ATTIVO) {
+            indice_inizio++;
+            if (angolo_deviazione > (int32_t)config_03 && !passaggio_confermato) {
+                passaggio_confermato = true;
+                direzione = (correctedAngle > 2048) ? "Uscita" : "Ingresso";
+                passaggio_porta_idx = indice_inizio;
+                Serial.printf("Passaggio confermato (%s) al campione %u\n", direzione, indice_inizio);
+            }
+            if (detect && !codice_associato) {
+                cat_name_evento = cat_name;
+                country_code_evento = country_code;
+                device_code_evento = device_code;
+                authorized_evento = is_authorized;
+                codice_associato = true;
+            }
+            if (trigger_porta_idx == -1 && angolo_deviazione > (int32_t)config_02) {
+                trigger_porta_idx = indice_inizio;
+            }
+            if (detect_idx == -1 && detect) {
+                detect_idx = indice_inizio;
+            }
+            if (infrared_idx == -1 && infrared) {
+                infrared_idx = indice_inizio;
+            }
+            if (trigger) {
+                conteggio_senza_trigger = 0;
+                ultimo_trigger_idx = indice_inizio;
+            } else {
+                conteggio_senza_trigger++;
+            }
+
+            if (newcode) {
+                float durata_effettiva = indice_inizio * 0.1f;
+                const char* tipo = passaggio_confermato ? (correctedAngle > 2048 ? "*Uscita" : "*Ingresso") : "*Affaccio";
+                float trigger_porta_t = (trigger_porta_idx >= 0) ? trigger_porta_idx * 0.1f : -1.0f;
+                float passaggio_porta_t = (passaggio_porta_idx >= 0) ? passaggio_porta_idx * 0.1f : -1.0f;
+                float detect_t = (detect_idx >= 0) ? detect_idx * 0.1f : -1.0f;
+                float infrared_t = (infrared_idx >= 0) ? infrared_idx * 0.1f : -1.0f;
+                add_log_entry(timestamp_inizio, tipo, cat_name_evento, country_code_evento, device_code_evento, authorized_evento);
+                Serial.printf("Evento chiuso forzatamente per newcode a %s, tipo: %s, Nome: %s, Durata: %.2f s, TriggerPorta: %.1f s, PassaggioPorta: %.1f s, Detect: %.1f s, Infrared: %.1f s\n",
+                              timestamp_full, tipo, cat_name_evento.c_str(), durata_effettiva, trigger_porta_t, passaggio_porta_t, detect_t, infrared_t);
+                stato = IDLE;
+                codice_associato = false;
+                if (trigger) {
+                    stato = EVENTO_ATTIVO;
+                    strncpy(timestamp_inizio, timestamp_full, sizeof(timestamp_inizio));
+                    indice_inizio = 0;
+                    passaggio_confermato = false;
+                    direzione = NULL;
+                    conteggio_senza_trigger = 0;
+                    ultimo_trigger_idx = 0;
+                    trigger_porta_idx = (angolo_deviazione > (int32_t)config_02) ? 0 : -1;
+                    passaggio_porta_idx = -1;
+                    detect_idx = detect ? 0 : -1;
+                    infrared_idx = infrared ? 0 : -1;
+                    codice_associato = detect;
+                    if (detect) {
+                        cat_name_evento = cat_name;
+                        country_code_evento = country_code;
+                        device_code_evento = device_code;
+                        authorized_evento = is_authorized;
+                    } else {
+                        cat_name_evento = "Sconosciuto";
+                        country_code_evento = 0;
+                        device_code_evento = 0;
+                        authorized_evento = false;
+                    }
+                    Serial.printf("Nuovo evento iniziato per newcode a %s\n", timestamp_inizio);
+                }
+            } else if (conteggio_senza_trigger >= config_04) {
+                float durata_effettiva = (ultimo_trigger_idx + 1) * 0.1f;
+                const char* tipo = passaggio_confermato ? (correctedAngle > 2048 ? "*Uscita" : "*Ingresso") : "*Affaccio";
+                float trigger_porta_t = (trigger_porta_idx >= 0) ? trigger_porta_idx * 0.1f : -1.0f;
+                float passaggio_porta_t = (passaggio_porta_idx >= 0) ? passaggio_porta_idx * 0.1f : -1.0f;
+                float detect_t = (detect_idx >= 0) ? detect_idx * 0.1f : -1.0f;
+                float infrared_t = (infrared_idx >= 0) ? infrared_idx * 0.1f : -1.0f;
+                add_log_entry(timestamp_inizio, tipo, cat_name_evento, country_code_evento, device_code_evento, authorized_evento);
+                Serial.printf("Evento terminato, tipo: %s, Nome: %s, Durata: %.2f s, TriggerPorta: %.1f s, PassaggioPorta: %.1f s, Detect: %.1f s, Infrared: %.1f s\n",
+                              tipo, cat_name_evento.c_str(), durata_effettiva, trigger_porta_t, passaggio_porta_t, detect_t, infrared_t);
+                stato = IDLE;
+                passaggio_confermato = false;
+                direzione = NULL;
+                conteggio_senza_trigger = 0;
+                ultimo_trigger_idx = 0;
+                trigger_porta_idx = -1;
+                passaggio_porta_idx = -1;
+                detect_idx = -1;
+                infrared_idx = -1;
+                codice_associato = false;
+            }
+        }
+
+        encoder_buffer[encoder_buffer_index].rawAngle = correctedAngle;
         encoder_buffer[encoder_buffer_index].infrared = infrared;
         encoder_buffer[encoder_buffer_index].detect = detect;
         encoder_buffer[encoder_buffer_index].door_open = door_open;
+        encoder_buffer[encoder_buffer_index].newcode = newcode; // Imposta il bit newcode
         encoder_buffer_index = (encoder_buffer_index + 1) % ENCODER_BUFFER_SIZE;
         lastRawAngle = rawAngle;
         lastMagnitude = magnitude;

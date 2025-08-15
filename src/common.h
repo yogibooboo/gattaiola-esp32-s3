@@ -35,7 +35,7 @@ struct EncoderData {
     uint8_t infrared : 1;   // Bit 0
     uint8_t detect : 1;     // Bit 1
     uint8_t door_open : 1;  // Bit 2
-    uint8_t padding : 1;    // Bit 3
+    uint8_t newcode : 1;    // Bit 3
     uint16_t rawAngle : 12; // Bit 4-15
 };
 
@@ -130,10 +130,8 @@ extern volatile uint16_t lastRawAngle;
 extern volatile uint16_t lastMagnitude;
 extern volatile uint32_t last_encoder_timestamp;
 extern AS5600 encoder;
-// Aggiunta per debug WebSocket
 extern volatile bool debug_stream_enabled;
 extern portMUX_TYPE debugMux;
-// Nuovi parametri
 extern uint32_t config_01;
 extern uint32_t config_02;
 extern uint32_t config_03;
@@ -147,7 +145,11 @@ extern uint32_t config_10;
 extern uint32_t door_rest;
 extern uint32_t door_in;
 extern uint32_t door_out;
-extern volatile uint16_t lastCorrectedAngle; // Nuova variabile
+extern volatile uint16_t lastCorrectedAngle;
+extern volatile uint64_t last_authorized_device_code; // Nuovo
+extern volatile uint16_t last_authorized_country_code; // Nuovo
+
+extern volatile bool interruptFlag;
 
 // Funzioni definite in wifi.cpp
 void wifi_task(void *pvParameters);

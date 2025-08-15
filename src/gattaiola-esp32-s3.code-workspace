@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": ".."
+		},
+		{
+			"name": "gattaiola",
+			"path": "../../gattaiola-esp32-s3-espdif-new/gattaiola"
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"*.backcpp": "cpp"
+		}
+	}
+}

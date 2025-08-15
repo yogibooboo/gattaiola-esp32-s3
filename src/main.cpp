@@ -33,6 +33,8 @@ AsyncWebServer server(80);
 uint32_t DOOR_TIMEOUT = 10000 / portTICK_PERIOD_MS;
 uint32_t WIFI_RECONNECT_DELAY = 1000;
 uint32_t UNAUTHORIZED_LOG_INTERVAL = 60000;
+volatile uint64_t last_authorized_device_code = 0;
+volatile uint16_t last_authorized_country_code = 0;
 bool WIFI_VERBOSE_LOG = false;
 Cat authorized_cats[MAX_CATS];
 size_t num_cats = 0;
@@ -68,6 +70,7 @@ AS5600 encoder;
 volatile bool debug_stream_enabled = false;
 portMUX_TYPE debugMux = portMUX_INITIALIZER_UNLOCKED;
 volatile bool as5600_connected = false; // Stato AS5600
+volatile bool interruptFlag= false;
 // Nuovi parametri
 uint32_t config_01 = 0;
 uint32_t config_02 = 0;
@@ -143,7 +146,7 @@ void setupRMT() {
     rmt_write_items(RMT_CHANNEL, items, 2, false);
 }
 
-void IRAM_ATTR onFdxTimer() {
+void IRAM_ATTR  onFdxTimer() {
     portENTER_CRITICAL_ISR(&fdxTimerMux);
     uint8_t bit = fdx_b_sequence[fdx_bit_index / 2];
     bool first_half_value = !fdx_last_half_value;
@@ -383,6 +386,11 @@ void print_task(void *pvParameters) {
     }
 }
 
+void IRAM_ATTR handleInfraredInterrupt() {
+  interruptFlag = true;
+}
+
+
 void setup() {
     Serial.begin(115200);
     delay(1000);
@@ -433,7 +441,9 @@ void setup() {
     digitalWrite(detected, HIGH);
     pinMode(wifi_led, OUTPUT);
     digitalWrite(wifi_led, HIGH);
-    pinMode(INFRARED_PIN, INPUT);
+    pinMode(INFRARED_PIN, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(INFRARED_PIN), handleInfraredInterrupt, CHANGE);
+
 
     xTaskCreatePinnedToCore(wifi_task, "WiFi_Task", 4096, NULL, 1, NULL, 0);
     xTaskCreatePinnedToCore(door_task, "Door_Task", 4096, NULL, 2, NULL, 0);
