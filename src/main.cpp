@@ -445,10 +445,7 @@ void setup() {
     attachInterrupt(digitalPinToInterrupt(INFRARED_PIN), handleInfraredInterrupt, CHANGE);
 
 
-    xTaskCreatePinnedToCore(wifi_task, "WiFi_Task", 4096, NULL, 1, NULL, 0);
-    xTaskCreatePinnedToCore(door_task, "Door_Task", 4096, NULL, 2, NULL, 0);
-    xTaskCreatePinnedToCore(print_task, "Print_Task", 4096, NULL, 1, NULL, 0);
-
+   
     setupRMT();
 
     pinMode(4, INPUT);
@@ -512,6 +509,11 @@ void setup() {
     start_rfid_task();
     
     timerAlarmEnable(timer);
+
+    xTaskCreatePinnedToCore(wifi_task, "WiFi_Task", 4096, NULL, 1, NULL, 0);
+    xTaskCreatePinnedToCore(door_task, "Door_Task", 4096, NULL, 2, NULL, 0);
+    xTaskCreatePinnedToCore(print_task, "Print_Task", 4096, NULL, 1, NULL, 0);
+
 
     last_millis = millis();
 }
