@@ -143,6 +143,9 @@ void door_task(void *pvParameters) {
     static uint64_t device_code_evento = 0;
     static bool authorized_evento = false;
     static bool codice_associato = false;
+    //Serial.println("Inizio door_task, attendo 2 secondi");
+    //vTaskDelay(2000 / portTICK_PERIOD_MS);
+    //Serial.println("Fine ritardo door_task, procedo");
 
     portENTER_CRITICAL(&doorModeMux);
     DoorMode initial_mode = door_mode;
@@ -427,7 +430,7 @@ void door_task(void *pvParameters) {
 
             if (newcode) {
                 float durata_effettiva = indice_inizio * 0.1f;
-                const char* tipo = passaggio_confermato ? (correctedAngle > 2048 ? "*Uscita" : "*Ingresso") : "*Affaccio";
+                const char* tipo = passaggio_confermato ? (direzione == "Uscita" ? "*Uscita" : "*Ingresso") : "*Affaccio";
                 float trigger_porta_t = (trigger_porta_idx >= 0) ? trigger_porta_idx * 0.1f : -1.0f;
                 float passaggio_porta_t = (passaggio_porta_idx >= 0) ? passaggio_porta_idx * 0.1f : -1.0f;
                 float detect_t = (detect_idx >= 0) ? detect_idx * 0.1f : -1.0f;
@@ -465,7 +468,7 @@ void door_task(void *pvParameters) {
                 }
             } else if (conteggio_senza_trigger >= config_04) {
                 float durata_effettiva = (ultimo_trigger_idx + 1) * 0.1f;
-                const char* tipo = passaggio_confermato ? (correctedAngle > 2048 ? "*Uscita" : "*Ingresso") : "*Affaccio";
+                const char* tipo = passaggio_confermato ? (direzione == "Uscita" ? "*Uscita" : "*Ingresso") : "*Affaccio";
                 float trigger_porta_t = (trigger_porta_idx >= 0) ? trigger_porta_idx * 0.1f : -1.0f;
                 float passaggio_porta_t = (passaggio_porta_idx >= 0) ? passaggio_porta_idx * 0.1f : -1.0f;
                 float detect_t = (detect_idx >= 0) ? detect_idx * 0.1f : -1.0f;
