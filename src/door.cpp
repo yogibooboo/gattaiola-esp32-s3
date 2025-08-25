@@ -277,7 +277,7 @@ void door_task(void *pvParameters) {
                 door_timer_start = xTaskGetTickCount();
                 if (!log_emitted) {
                     Serial.printf("[%s] Rilevato gatto: %s, Autorizzato: Sì\n", time_str, cat_name.c_str());
-                    add_log_entry(timestamp_full, "Autorizzato", cat_name, country_code, device_code, true);
+                    //add_log_entry(timestamp_full, "Autorizzato", cat_name, country_code, device_code, true);
                     log_emitted = true;
                 }
                 if (!door_open && current_mode == AUTO) {
@@ -290,11 +290,11 @@ void door_task(void *pvParameters) {
                 if (millis() - last_unauthorized_log >= UNAUTHORIZED_LOG_INTERVAL) {
                     if (cat_name != "Sconosciuto") {
                         Serial.printf("[%s] Rilevato gatto: %s, Autorizzato: No\n", time_str, cat_name.c_str());
-                        add_log_entry(timestamp_full, "Non autorizzato (noto)", cat_name, country_code, device_code, false);
+                        //add_log_entry(timestamp_full, "Non autorizzato (noto)", cat_name, country_code, device_code, false);
                     } else {
                         Serial.printf("[%s] Gatto sconosciuto, CC: %u, DC: %llu, Non autorizzato\n",
                                       time_str, country_code, (unsigned long long)device_code);
-                        add_log_entry(timestamp_full, "Non autorizzato (sconosciuto)", "", country_code, device_code, false);
+                        //add_log_entry(timestamp_full, "Non autorizzato (sconosciuto)", "", country_code, device_code, false);
                     }
                     last_unauthorized_log = millis();
                 }
