@@ -4,7 +4,7 @@
 #include "soc/io_mux_reg.h"
 
 // Definizione variabili globali
-volatile bool buffer_ready = false; // Compatibilità
+volatile bool buffer_ready = false; // CompatibilitÃ 
 volatile int32_t available_samples = 0;
 uint32_t ia = -4; // Inizializzato a -4
 volatile uint32_t i_interrupt = 0; // Esplicito volatile
@@ -35,6 +35,13 @@ volatile TickType_t door_timer_start = 0;
 volatile uint32_t display_sync_count = 0; // Contatore sync con CRC OK
 uint16_t datoadc=0;
 
+// Variabili per debug - export delle variabili statiche
+int32_t debug_max_i = 0;
+int32_t debug_min_i = 0; 
+int32_t debug_max_i8 = 0;
+int32_t debug_min_i8 = 0;
+int32_t debug_stato = 1;
+
 portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
 // Interrupt produttore
@@ -42,7 +49,7 @@ void IRAM_ATTR onTimer() {
     //digitalWrite(21, HIGH);
     if (!fadcBusy()) {
         //adc_buffer[i_interrupt & 0x3FFF] = fadcResult();
-        datoadc= fadcResult();
+        datoadc= (fadcResult()&0xFFF);
         adc_buffer[i_interrupt & 0x3FFF] = datoadc;
         //available_samples++; // Atomico
         i_interrupt++;
@@ -57,8 +64,7 @@ void IRAM_ATTR onTimer() {
 void media_correlazione_32() {
     // Inizializzazione una tantum
     static bool initialized = false;
-    static int32_t max_i = 0, min_i = 0, max_i8 = 0, min_i8 = 0, min_i_iniziale=0, max_i_iniziale=0;
-    static int32_t stato = 1;
+    static int32_t min_i_iniziale=0, max_i_iniziale=0;
     static int32_t stato_decodifica = 0, contatore_zeri = 0, contatore_bytes = 0, contatore_bits = 0, stato_decobytes = 0;
     static int32_t ultima_distanza = 0, newbit = 0, numbit = 0;
     static bool newpeak = false;
@@ -119,39 +125,43 @@ void media_correlazione_32() {
 
         if (ia >= 32) {
             // Calcolo filtro mobile
-            filt[ia & (256 - 1)] = filt[(ia-1) & (256 - 1)] - 
-                (adc_buffer[(ia-4) & 0x3FFF] / larghezza_finestra) + 
-                (adc_buffer[(ia+3) & 0x3FFF] / larghezza_finestra);
-            corr[(ia-16) & (256 - 1)] = corr[(ia-17) & (256 - 1)] - 
-                filt[(ia-32) & (256 - 1)] + 
-                2 * filt[(ia-16) & (256 - 1)] - 
-                filt[ia & (256 - 1)];
+            int32_t sum = 0;
+            for(int j = 0; j < 8; j++) {
+                sum += adc_buffer[(ia-4+j) & 0x3FFF];
+            }
+            filt[ia & 255] = sum; // 8;  // O anche sum senza divisione
+            int32_t sum_corr = 0;
+            for(int j = 0; j < 16; j++) {
+                sum_corr += filt[(ia-31+j) & 255];  // Primi 16: somma
+                sum_corr -= filt[(ia-15+j) & 255];  // Ultimi 16: sottrai  
+            }
+            corr[(ia-16) & 255] = sum_corr;
 
             newbit = 2; numbit = 0; newpeak = false;
 
             // Rilevamento picchi
-            if (stato == 1) {
-                max_i = max(corr[(ia-16) & (256 - 1)], max_i);
-                max_i8 = max(corr[(ia-24) & (256 - 1)], max_i8);
-                if ((max_i == max_i8) & (max_i != max_i_iniziale)) {
+            if (debug_stato == 1) {
+                debug_max_i = max(corr[(ia-16) & (256 - 1)], debug_max_i);
+                debug_max_i8 = max(corr[(ia-24) & (256 - 1)], debug_max_i8);
+                if ((debug_max_i == debug_max_i8) & (debug_max_i != max_i_iniziale)) {
                     peaks[num_picchi & 0xFF] = ia - 24;
                     num_picchi++;
-                    stato = -1;
-                    min_i = corr[(ia-16) & (256 - 1)];
-                    min_i8 = corr[(ia-24) & (256 - 1)];
-                    min_i_iniziale = min_i8;
+                    debug_stato = -1;
+                    debug_min_i = corr[(ia-16) & (256 - 1)];
+                    debug_min_i8 = corr[(ia-24) & (256 - 1)];
+                    min_i_iniziale = debug_min_i8;
                     newpeak = true;
                 }
             } else {
-                min_i = min(corr[(ia-16) & (256 - 1)], min_i);
-                min_i8 = min(corr[(ia-24) & (256 - 1)], min_i8);
-                if ((min_i == min_i8) & (min_i != min_i_iniziale)) {
+                debug_min_i = min(corr[(ia-16) & (256 - 1)], debug_min_i);
+                debug_min_i8 = min(corr[(ia-24) & (256 - 1)], debug_min_i8);
+                if ((debug_min_i == debug_min_i8) & (debug_min_i != min_i_iniziale)) {
                     peaks[num_picchi & 0xFF] = ia - 24;
                     num_picchi++;
-                    stato = 1;
-                    max_i = corr[(ia-16) & (256 - 1)];
-                    max_i8 = corr[(ia-24) & (256 - 1)];
-                    max_i_iniziale = max_i8;
+                    debug_stato = 1;
+                    debug_max_i = corr[(ia-16) & (256 - 1)];
+                    debug_max_i8 = corr[(ia-24) & (256 - 1)];
+                    max_i_iniziale = debug_max_i8;
                     newpeak = true;
                 }
             }
@@ -176,7 +186,7 @@ void media_correlazione_32() {
                         stato_decodifica = 1;
                     }
                 } else if (stato_decodifica == 1)  {
-                        // PRIMA PROVA: se la somma delle ultime due distanze è maggiore di 32+8 allora il primo era un 1 e il secondo è l'inizio di uno zero
+                        // PRIMA PROVA: se la somma delle ultime due distanze Ã¨ maggiore di 32+8 allora il primo era un 1 e il secondo Ã¨ l'inizio di uno zero
                     confro=42;   //1507
                     if(bits[(num_bits-1) & 0xFF].value==1) confro=48;   //test su bit orecedente
                     if((ultima_distanza + dist[(num_distanze - 2) & 0xFF]) >= confro) {
@@ -184,7 +194,7 @@ void media_correlazione_32() {
                         bits[num_bits & 0xFF].pos = ia - 24 - ultima_distanza;
                         num_bits++;
                         newbit = 1; numbit = 1;
-                        stato_decodifica = 2;  //in buffer_analyzer non c'è
+                        stato_decodifica = 2;  //in buffer_analyzer non c'Ã¨
                         if ((ultima_distanza + dist[(num_distanze - 2) & 0xFF]) >= 52) {  // #2106 ma se addirittura supera 52 erano 2 uni
                             bits[num_bits & 0xFF].value = 1;
                             bits[num_bits & 0xFF].pos = ia - 24;
