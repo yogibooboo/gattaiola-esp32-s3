@@ -47,6 +47,13 @@ extern volatile bool door_open; // Stato gattaiola
 extern volatile TickType_t door_timer_start; // Inizio timer
 extern volatile uint32_t display_sync_count; // Contatore sync con CRC OK per stampa
 
+// Variabili per debug della macchina a stati
+extern int32_t debug_max_i;
+extern int32_t debug_min_i; 
+extern int32_t debug_max_i8;
+extern int32_t debug_min_i8;
+extern int32_t debug_stato;
+
 void start_rfid_task();
 void IRAM_ATTR onTimer(); // Dichiarazione di onTimer
 

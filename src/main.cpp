@@ -357,28 +357,23 @@ void print_task(void *pvParameters) {
         time_t now = local_time + (millis() - last_millis) / 1000;
         freq = i_interrupt - last_i_interrupt;
         last_i_interrupt = i_interrupt;
-        if (WIFI_VERBOSE_LOG) {
-            strftime(time_str, sizeof(time_str), "%d-%m-%Y %H:%M:%S", localtime(&now));
-        } else {
-            strftime(time_str, sizeof(time_str), "%H:%M:%S", localtime(&now));
-        }
-        if (as5600_connected) {
-            logDebug("[%s] Sync: %u, OK: %u, Last Seq: [%02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X], "
-                     "DC: %llu, CC: %u, diff: %u, freq: %u, a_s: %ld, contap: %u, Angle: %u/%u, mag: %u\n",
-                     time_str, sync_count, display_sync_count,
-                     last_sequence[0], last_sequence[1], last_sequence[2], last_sequence[3],
-                     last_sequence[4], last_sequence[5], last_sequence[6], last_sequence[7],
-                     last_sequence[8], last_sequence[9],
-                     (unsigned long long)last_device_code, (long)last_country_code, (i_interrupt-ia), freq, (long)available_samples, contaporta, lastRawAngle, lastCorrectedAngle, lastMagnitude);
-        } else {
-            logDebug("[%s] Sync: %u, OK: %u, Last Seq: [%02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X, %02X], "
-                     "DC: %llu, CC: %u, diff: %u, freq: %u, a_s: %ld, contap: %u, rawAngle: N/A, correctedAngle: %u, magnitude: N/A\n",
-                     time_str, sync_count, display_sync_count,
-                     last_sequence[0], last_sequence[1], last_sequence[2], last_sequence[3],
-                     last_sequence[4], last_sequence[5], last_sequence[6], last_sequence[7],
-                     last_sequence[8], last_sequence[9],
-                     (unsigned long long)last_device_code, (long)last_country_code, (i_interrupt-ia), freq, (long)available_samples, contaporta, lastCorrectedAngle);
-        }
+
+        strftime(time_str, sizeof(time_str), "%H:%M:%S", localtime(&now));
+
+logDebug("[%s]Sync:%u,OK:%u,[%02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X],"
+         "DC:%llu,CC:%u,diff:%u, freq:%u,a_s: %ld,Angle:%u/%u,mag:%u\n",
+         time_str, sync_count, display_sync_count,
+         last_sequence[0], last_sequence[1], last_sequence[2], last_sequence[3],
+         last_sequence[4], last_sequence[5], last_sequence[6], last_sequence[7],
+         last_sequence[8], last_sequence[9],
+         (unsigned long long)last_device_code, (long)last_country_code, (i_interrupt-ia), freq, (long)available_samples, lastRawAngle, lastCorrectedAngle, lastMagnitude);
+         
+if (WIFI_VERBOSE_LOG) {
+         logDebug("DEBUG: np: %d, nd: %d, nb: %d, filt: %d, corr: %d, max_i: %d, min_i: %d, stato: %d,contap:%u\n",
+            num_picchi, num_distanze, num_bits, 
+            filt[0], corr[0], debug_max_i, debug_min_i, debug_stato, contaporta);
+}
+                 
         sync_count = 0;
         display_sync_count = 0;
 
