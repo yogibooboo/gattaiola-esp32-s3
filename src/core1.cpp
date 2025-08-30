@@ -16,9 +16,9 @@ int32_t peaks[256];
 int32_t dist[256];
 Bit bits[256];
 uint8_t bytes[10];
-int32_t num_picchi = 0;
-int32_t num_distanze = 0;
-int32_t num_bits = 0;
+uint32_t num_picchi = 0;
+uint32_t num_distanze = 0;
+uint32_t num_bits = 0;
 uint16_t country_code = 0;
 uint64_t device_code = 0;
 bool crc_ok = false;
@@ -79,10 +79,13 @@ void media_correlazione_32() {
     if (!initialized) {
         num_picchi = num_distanze = num_bits = 0;
         for (int j = 0; j < 10; j++) bytes[j] = 0;
-        for (int j = 0; j < 256; j++) filt[j] = corr[j] = 0;
+        for (int j = 0; j < 256; j++) filt[j] = corr[j] = peaks[j]=dist[j]=0;
         initialized = true;
     }
     bool wait10000=true;
+
+    ia = 32;
+    vTaskDelay(10 / portTICK_PERIOD_MS);     //assicura che inizialmente ci siano un pò di campioni
     while (true) {
         
         // Controlla se ci sono dati
@@ -123,8 +126,8 @@ void media_correlazione_32() {
         const int lunghezza_correlazione = 32;
         const int soglia_mezzo_bit = 25;      //1507
 
-        if (ia >= 32) {
-            // Calcolo filtro mobile
+        //if (ia >= 32) {     tolto, rimpiazzato con inizializzazione ia a 32 e ritardo iniziale per assicurare i primi 32 campioni
+            digitalWrite(21, HIGH);
             int32_t sum = 0;
             for(int j = 0; j < 8; j++) {
                 sum += adc_buffer[(ia-4+j) & 0x3FFF];
@@ -136,6 +139,7 @@ void media_correlazione_32() {
                 sum_corr -= filt[(ia-15+j) & 255];  // Ultimi 16: sottrai  
             }
             corr[(ia-16) & 255] = sum_corr;
+            digitalWrite(21, LOW);
 
             newbit = 2; numbit = 0; newpeak = false;
 
@@ -167,7 +171,7 @@ void media_correlazione_32() {
             }
 
             // Calcolo distanze
-            if (num_picchi > 1 && newpeak) {
+            if (newpeak) {    //tolto  if (num_picchi > 1 && newpeak) { che bloccava in overflow negativo
                 //2006 int32_t nuova_distanza = peaks[(num_picchi-1) & 0xFF] - peaks[(num_picchi-2) & 0xFF];
                 ultima_distanza = peaks[(num_picchi - 1) & 0xFF] - peaks[(num_picchi - 2) & 0xFF];
                 dist[num_distanze & 0xFF] = ultima_distanza;
@@ -261,7 +265,7 @@ void media_correlazione_32() {
                                 }
                                 crc_ok = (crc == 0);
                                 if (crc_ok) {
-                                    digitalWrite(21, HIGH);
+                                    //digitalWrite(21, HIGH);
                                     country_code = (bytes[5] << 2) | (bytes[4] >> 6);
                                     device_code = ((uint64_t)(bytes[4] & 0x3F) << 32) | ((uint64_t)bytes[3] << 24) |
                                                   ((uint64_t)bytes[2] << 16) | (bytes[1] << 8) | bytes[0];
@@ -283,7 +287,7 @@ void media_correlazione_32() {
                 }
                 numbit--;
             }
-        }
+        //}  //if (ia >= 32) {     tolto,
         
         ia++; // Avanza al prossimo campione
     }
